@@ -42,8 +42,27 @@ Download and process ORCID in bulk
 
 ## 💪 Getting Started
 
-> TODO show in a very small amount of space the **MOST** useful thing your package can do.
-> Make it as short as possible! You have an entire set of docs for later.
+```python
+import orcid_downloader
+
+# Takes 10-15 minutes to download
+path = orcid_downloader.ensure_summaries()
+
+# Takes a bit more than an hour to parse after downloading was done
+records = orcid_downloader.get_records()
+```
+
+The processed records are distributed on [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10137940.svg)](https://doi.org/10.5281/zenodo.10137940).
+
+Grounding can be done on the name field, aliases, and credit name field:
+
+```python
+>>> orcid_downloader.ground_researcher("Charles Hoyt")
+[ScoredMatch(Term(charles hoyt,Charles Hoyt,orcid,0000-0003-4423-4370,Charles Tapley Hoyt,synonym,orcid,None,None,None),0.5555555555555556,Match(query=Charles Hoyt,ref=Charles Hoyt,exact=True,space_mismatch=False,dash_mismatches={},cap_combos=[]))]
+```
+
+> **Note**
+> It takes about 5 minutes to warm up the grounder, if the data has already been downloaded and processed.
 
 
 ## 🚀 Installation

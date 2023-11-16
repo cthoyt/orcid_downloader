@@ -218,14 +218,14 @@ def ground_researcher(name: str) -> list["gilda.ScoredMatch"]:
 def get_gilda_grounder() -> "gilda.Grounder":
     """Get a Gilda grounder from ORCID names/aliases."""
     from gilda import Grounder
-    from gilda.term import dump_terms, filter_out_duplicates
+    from gilda.term import dump_terms
 
     if GILDA_PATH.is_file():
         return Grounder(GILDA_PATH)
 
     records = get_records()
     terms = list(_records_to_gilda_terms(records))
-    terms = filter_out_duplicates(terms)
+    # we don't need to filter duplicates globally
     dump_terms(terms, GILDA_PATH)
     return Grounder(terms)
 
@@ -233,9 +233,8 @@ def get_gilda_grounder() -> "gilda.Grounder":
 def _records_to_gilda_terms(records: dict) -> Iterable["gilda.Term"]:
     from gilda import Term
     from gilda.process import normalize
-    from gilda.term import filter_out_duplicates
 
-    def _iter_terms_for_researcher(orcid, data) -> Iterable[gilda.Term]:
+    for orcid, data in tqdm(records.items(), unit_scale=True, unit="person", desc="Indexing"):
         name = data["name"]
         norm_name = normalize(name)
         if norm_name:
@@ -265,11 +264,6 @@ def _records_to_gilda_terms(records: dict) -> Iterable["gilda.Term"]:
                     status="synonym",
                     source="orcid",
                 )
-
-    for orcid_, data_ in tqdm(records.items(), unit_scale=True, unit="person", desc="Indexing"):
-        terms = list(_iter_terms_for_researcher(orcid_, data_))
-        terms = filter_out_duplicates(terms)
-        yield from terms
 
 
 def name_to_synonyms(name: str) -> Iterable[str]:

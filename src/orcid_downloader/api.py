@@ -6,10 +6,11 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 import tarfile
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import pystow
 from lxml import etree  # noqa:S410
@@ -24,6 +25,8 @@ __all__ = [
     "ground_researcher",
     "get_gilda_grounder",
 ]
+
+logger = logging.getLogger(__name__)
 
 URL_2023 = "https://orcid.figshare.com/ndownloader/files/42479787"
 NAMESPACES = {
@@ -51,19 +54,22 @@ def ensure_summaries() -> Path:
 def get_records() -> dict:
     """Get lexicalizations for people in ORCID, takes about an hour."""
     if RECORDS_PATH.is_file():
-        with gzip.open("rt") as file:
-            return json.load(file)
+        logger.info("loading ORCID records from %s", RECORDS_PATH)
+        with gzip.open(RECORDS_PATH, "rt") as file:
+            rv = json.load(file)
+        logger.info("done loading ORCID records")
+        return rv
 
     path = ensure_summaries()
     tar_file = tarfile.open(path)
     records = {}
     with tqdm(unit_scale=True, total=17_700_000) as pbar:
-        while my_member := tar_file.next():
-            file = tar_file.extractfile(my_member)
+        while member := tar_file.next():
+            file = tar_file.extractfile(member)
             if not file:
                 continue
 
-            tree = etree.parse(file)
+            tree = etree.parse(file)  # noqa:S320
             # print(etree.tostring(tree, pretty_print=True).decode("utf8"))
 
             orcid = tree.findtext(".//common:path", namespaces=NAMESPACES)
@@ -85,15 +91,15 @@ def get_records() -> dict:
                 # Skip records that don't have any kinds of labels
                 continue
 
-            aliases = set()
+            aliases: set[str] = set()
             if not credit_name:
                 name = label_name
             else:
                 name = credit_name
-                if label_name:
+                if label_name is not None:
                     aliases.add(label_name)
 
-            r = dict(name=name)
+            r: dict[str, Any] = dict(name=name)
             aliases.update(_iter_other_names(tree))
             if aliases:
                 r["aliases"] = sorted(aliases)
@@ -111,8 +117,10 @@ def get_records() -> dict:
 
     tar_file.close()
 
+    logger.info("writing ORCID records to %s", RECORDS_PATH)
     with gzip.open(RECORDS_PATH, "wt") as file:
         json.dump(records, file)
+    logger.info("done ORCID writing records")
 
     return records
 
@@ -122,11 +130,12 @@ def _iter_other_names(t) -> Iterable[str]:
         part = part.text.strip()
         for z in part.split(";"):
             z = z.strip()
-            if z and " " in z and len(z) < 60:
+            if z is not None and " " in z and len(z) < 60:
                 yield z
 
 
 UNKNOWN_SOURCES = {}
+LOWERCASE_THESE_SOURCES = {"RINGGOLD", "GRID", "LEI"}
 
 
 def _get_employments(tree):
@@ -151,14 +160,10 @@ def _get_employments(tree):
             link = link.strip()
             if source == "ROR":
                 references["ror"] = link.removeprefix("https://ror.org/")
-            elif source == "RINGGOLD":
-                references[source.lower()] = link
-            elif source == "GRID":
+            elif source in LOWERCASE_THESE_SOURCES:
                 references[source.lower()] = link
             elif source == "FUNDREF":
                 references["funderregistry"] = link.removeprefix("http://dx.doi.org/10.13039/")
-            elif source == "LEI":
-                references["lei"] = link
             elif source not in UNKNOWN_SOURCES:
                 tqdm.write(f"unhandled source: {source} / link: {link}")
                 UNKNOWN_SOURCES[source] = link
@@ -183,20 +188,20 @@ def _get_employments(tree):
 
 def _get_educations(tree):
     results = []
-    for x in tree.findall(
+    for element in tree.findall(
         ".//activities:educations//education:education-summary", namespaces=NAMESPACES
     ):
         # TODO use ROR to ground these
-        name = x.findtext(".//common:organization//common:name", namespaces=NAMESPACES)
+        name = element.findtext(".//common:organization//common:name", namespaces=NAMESPACES)
         if not name:
             continue
 
         record = dict(name=name)
-        start_year = x.findtext(".//common:start-date//common:year", namespaces=NAMESPACES)
+        start_year = element.findtext(".//common:start-date//common:year", namespaces=NAMESPACES)
         if start_year:
             record["start"] = start_year
 
-        end_year = x.findtext(".//common:end-date//common:year", namespaces=NAMESPACES)
+        end_year = element.findtext(".//common:end-date//common:year", namespaces=NAMESPACES)
         if end_year:
             record["end"] = end_year
 
@@ -213,51 +218,112 @@ def ground_researcher(name: str) -> list["gilda.ScoredMatch"]:
 def get_gilda_grounder() -> "gilda.Grounder":
     """Get a Gilda grounder from ORCID names/aliases."""
     from gilda import Grounder
-    from gilda.term import dump_terms
+    from gilda.term import dump_terms, filter_out_duplicates
 
     if GILDA_PATH.is_file():
         return Grounder(GILDA_PATH)
 
     records = get_records()
-    terms = _records_to_gilda_terms(records)
+    terms = list(_records_to_gilda_terms(records))
+    terms = filter_out_duplicates(terms)
     dump_terms(terms, GILDA_PATH)
     return Grounder(terms)
 
 
-def _records_to_gilda_terms(records: dict) -> list["gilda.Term"]:
+def _records_to_gilda_terms(records: dict) -> Iterable["gilda.Term"]:
     from gilda import Term
     from gilda.process import normalize
+    from gilda.term import filter_out_duplicates
 
-    terms = []
-    for orcid, data in tqdm(records.items(), unit_scale=True, unit="person"):
+    def _iter_terms_for_researcher(orcid, data) -> Iterable[gilda.Term]:
         name = data["name"]
         norm_name = normalize(name)
         if norm_name:
-            terms.append(
-                Term(
-                    norm_text=norm_name,
-                    text=name,
-                    db="orcid",
-                    id=orcid,
-                    entry_name=name,
-                    status="name",
-                    source="orcid",
-                )
+            yield Term(
+                norm_text=norm_name,
+                text=name,
+                db="orcid",
+                id=orcid,
+                entry_name=name,
+                status="name",
+                source="orcid",
             )
-        for alias in data.get("aliases", []):
+        aliases = set(data.get("aliases", []))
+        aliases.update(name_to_synonyms(name))
+        aliases -= {name}
+        for alias in aliases:
             if not alias:
                 continue
             norm_alias = normalize(alias)
             if norm_alias:
-                terms.append(
-                    Term(
-                        norm_text=norm_alias,
-                        text=alias,
-                        db="orcid",
-                        id=orcid,
-                        entry_name=name,
-                        status="synonym",
-                        source="orcid",
-                    )
+                yield Term(
+                    norm_text=norm_alias,
+                    text=alias,
+                    db="orcid",
+                    id=orcid,
+                    entry_name=name,
+                    status="synonym",
+                    source="orcid",
                 )
-    return terms
+
+    for orcid_, data_ in tqdm(records.items(), unit_scale=True, unit="person", desc="Indexing"):
+        terms = list(_iter_terms_for_researcher(orcid_, data_))
+        terms = filter_out_duplicates(terms)
+        yield from terms
+
+
+def name_to_synonyms(name: str) -> Iterable[str]:
+    """Create a synonym list from a full name."""
+    # assume last part is the last name, this isn't always correct, but :shrug:
+    *givens, family = name.split()
+    if not givens:
+        return
+
+    yield family + ", " + givens[0]
+    yield family + ", " + " ".join(givens)
+
+    if len(givens) > 1:
+        first_given, *middle_givens = givens
+        middle_given_initials = [g[0] for g in middle_givens]
+        yield family + ", " + first_given + " " + " ".join(middle_given_initials)
+        yield family + ", " + first_given + " " + "".join(f"{i}." for i in middle_given_initials)
+        yield family + ", " + first_given + " " + " ".join(f"{i}." for i in middle_given_initials)
+
+        yield first_given + " " + " ".join(middle_given_initials) + " " + family
+        yield first_given + " " + "".join(f"{i}." for i in middle_given_initials) + " " + family
+        yield first_given + " " + " ".join(f"{i}." for i in middle_given_initials) + " " + family
+
+    firsts = [given[0] for given in givens]
+    firsts_unspaced = "".join(firsts)
+    firsts_spaced = " ".join(firsts)
+    firsts_dotted = [f"{first}." for first in firsts]
+    firsts_dotted_unspaced = "".join(firsts_dotted)
+    firsts_dotted_spaced = " ".join(firsts_dotted)
+    first_first = firsts[0]
+
+    yield first_first + " " + family
+    yield first_first + ". " + family
+
+    yield firsts_unspaced + " " + family
+    yield firsts_spaced + " " + family
+    yield firsts_dotted_unspaced + " " + family
+    yield firsts_dotted_spaced + " " + family
+
+    yield family + " " + firsts_unspaced
+    yield family + " " + firsts_dotted_unspaced
+    yield family + " " + firsts_spaced
+    yield family + " " + firsts_dotted_spaced
+
+    yield family + ", " + firsts_unspaced
+    yield family + ", " + firsts_dotted_unspaced
+    yield family + ", " + firsts_spaced
+    yield family + ", " + firsts_dotted_spaced
+
+    yield family + " " + first_first
+    yield family + " " + first_first + "."
+    yield family + ", " + first_first + "."
+    yield family + ", " + first_first
+
+
+if __name__ == "__main__":
+    print(*ground_researcher("CT Hoyt"), sep="\n")  # noqa:T201

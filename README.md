@@ -27,6 +27,7 @@
         <img src='https://img.shields.io/badge/code%20style-black-000000.svg' alt='Code style: black' /></a>
     <a href="https://github.com/cthoyt/orcid_downloader/blob/main/.github/CODE_OF_CONDUCT.md">
         <img src="https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg" alt="Contributor Covenant"/></a>
+    <a href="https://zenodo.org/doi/10.5281/zenodo.11371784"><img src="https://zenodo.org/badge/719059734.svg" alt="DOI"></a>
 </p>
 
 Download and process ORCID in bulk
@@ -43,7 +44,8 @@ path = orcid_downloader.ensure_summaries()
 records = orcid_downloader.get_records()
 ```
 
-The processed records are distributed on [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.11371268.svg)](https://zenodo.org/records/11371268).
+The processed records are distributed
+on [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.11371268.svg)](https://zenodo.org/records/11371268).
 
 Grounding can be done on the name field, aliases, and credit name field:
 
@@ -55,17 +57,14 @@ Grounding can be done on the name field, aliases, and credit name field:
 > **Note**
 > It takes about 5 minutes to warm up the grounder, if the data has already been downloaded and processed.
 
-
 ## 🚀 Installation
 
-<!-- Uncomment this section after your first ``tox -e finish``
 The most recent release can be installed from
 [PyPI](https://pypi.org/project/orcid_downloader/) with:
 
 ```shell
 pip install orcid_downloader
 ```
--->
 
 The most recent code and data can be installed directly from GitHub with:
 

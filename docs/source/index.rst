@@ -8,12 +8,12 @@ package using `cookiecutter-snekpack <https://github.com/cthoyt/cookiecutter-sne
 It comes with the following:
 
 - Standard `src/` layout
-- Declarative setup with `setup.cfg` and `pyproject.toml`
+- Declarative setup with `pyproject.toml` (following [PEP 621](https://peps.python.org/pep-0621/))
 - Reproducible tests with `pytest` and `tox`
 - A vanity CLI via python entrypoints
 - Version management with `bumpversion`
 - Documentation build with `sphinx`
-- Testing of code quality with `flake8` in `tox`
+- Testing of code quality with `ruff` in `tox`
 - Testing of documentation coverage with `docstr-coverage` in `tox`
 - Testing of documentation format and build in `tox`
 - Testing of package metadata completeness with `pyroma` in `tox`

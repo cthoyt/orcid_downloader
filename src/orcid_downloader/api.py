@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """Download and process ORCID in bulk."""
 
 from __future__ import annotations
@@ -13,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, NamedTuple
 
 import pystow
-from lxml import etree  # noqa:S410
+from lxml import etree
 from tqdm.auto import tqdm
 
 if TYPE_CHECKING:
@@ -30,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 
 class VersionInfo(NamedTuple):
+    """A tuple containing information for downloading ORCID data dumps."""
+
     version: str
     url: str
     fname: str
@@ -108,7 +108,7 @@ def ensure_summaries() -> Path:
     return MODULE.ensure(url=VERSION_2023.url, name=VERSION_2023.fname)
 
 
-def get_records(*, force: bool = False, test: bool = False) -> dict:
+def get_records(*, force: bool = False, test: bool = False) -> dict:  # noqa:C901
     """Get lexicalizations for people in ORCID, takes about an hour."""
     records_path = TEST_RECORDS_PATH if test else RECORDS_PATH
     records_hq_path = TEST_RECORDS_HQ_PATH if test else RECORDS_HQ_PATH
@@ -116,7 +116,7 @@ def get_records(*, force: bool = False, test: bool = False) -> dict:
 
     if not test and not force and records_path.is_file():
         logger.info("loading ORCID records from %s", records_path)
-        with opener(records_path, "rt") as file:
+        with opener(records_path, "rt") as file:  # type: ignore
             rv = json.load(file)
         logger.info("done loading ORCID records")
         return rv
@@ -173,7 +173,7 @@ def get_records(*, force: bool = False, test: bool = False) -> dict:
                 if label_name is not None:
                     aliases.add(label_name)
 
-            r: dict[str, Any] = dict(name=name.strip())
+            r: dict[str, Any] = dict(name=name)
             aliases.update(_iter_other_names(tree))
             if aliases:
                 r["aliases"] = sorted(aliases)
@@ -201,7 +201,7 @@ def get_records(*, force: bool = False, test: bool = False) -> dict:
     tar_file.close()
 
     logger.info("writing ORCID records to %s", records_path)
-    with opener(records_path, "wt") as file:
+    with opener(records_path, "wt") as file:  # type:ignore
         json.dump(records, file, ensure_ascii=False, indent=2 if test else None)
     logger.info("done writing ORCID records")
 
@@ -213,7 +213,7 @@ def get_records(*, force: bool = False, test: bool = False) -> dict:
         if _is_hq(record)
     }
     logger.info("writing high quality ORCID records to %s", records_hq_path)
-    with opener(records_hq_path, "wt") as file:
+    with opener(records_hq_path, "wt") as file:  # type:ignore
         json.dump(hq_records, file, ensure_ascii=False, indent=2 if test else None)
     logger.info("done writing high quality ORCID records")
 
@@ -233,7 +233,7 @@ UNKNOWN_SOURCES = {}
 LOWERCASE_THESE_SOURCES = {"RINGGOLD", "GRID", "LEI"}
 
 
-def _get_external_identifiers(tree, orcid) -> dict[str, str]:
+def _get_external_identifiers(tree, orcid) -> dict[str, str]:  # noqa:C901
     rv = {}
     for i in tree.findall(
         ".//external-identifier:external-identifiers/external-identifier:external-identifier",
@@ -260,7 +260,7 @@ def _get_external_identifiers(tree, orcid) -> dict[str, str]:
     for v in tree.findall(
         ".//researcher-url:researcher-urls/researcher-url:researcher-url", namespaces=NAMESPACES
     ):
-        # name = v.findtext(".//researcher-url:url-name", namespaces=NAMESPACES)
+        # see also .//researcher-url:url-name
         value = v.findtext(".//researcher-url:url", namespaces=NAMESPACES).rstrip("/")
         if value.startswith("https://github.com/"):
             svalue = value.removeprefix("https://github.com/")
@@ -290,7 +290,7 @@ def _get_works(tree) -> list[dict[str, str]]:
     return [{"pubmed": pmid} for pmid in sorted(pmids)]
 
 
-def _get_employments(tree, grounder: "gilda.Grounder"):
+def _get_employments(tree, grounder: gilda.Grounder):
     results = []
     for element in tree.findall(".//employment:employment-summary", namespaces=NAMESPACES):
         if element is None:
@@ -352,7 +352,7 @@ def _get_role(element) -> str | None:
     return role
 
 
-def _get_educations(tree, grounder: "gilda.Grounder"):
+def _get_educations(tree, grounder: gilda.Grounder):
     results = []
     for element in tree.findall(
         ".//activities:educations//education:education-summary", namespaces=NAMESPACES
@@ -408,13 +408,13 @@ def _get_disambiguated_organization(organization_element, name, grounder) -> dic
     return references
 
 
-def ground_researcher(name: str) -> list["gilda.ScoredMatch"]:
+def ground_researcher(name: str) -> list[gilda.ScoredMatch]:
     """Ground a name based on ORCID names/aliases."""
     return get_gilda_grounder().ground(name)
 
 
 @lru_cache(1)
-def get_gilda_grounder() -> "gilda.Grounder":
+def get_gilda_grounder() -> gilda.Grounder:
     """Get a Gilda grounder from ORCID names/aliases."""
     from gilda import Grounder
     from gilda.term import dump_terms
@@ -430,7 +430,7 @@ def get_gilda_grounder() -> "gilda.Grounder":
 
 
 @lru_cache(1)
-def get_ror_grounder() -> "gilda.Grounder":
+def get_ror_grounder() -> gilda.Grounder:
     """Get a grounder for ROR."""
     import pyobo.gilda_utils
 
@@ -446,7 +446,7 @@ def _is_hq(r) -> bool:
     )
 
 
-def _records_to_gilda_terms(records: dict) -> Iterable["gilda.Term"]:
+def _records_to_gilda_terms(records: dict) -> Iterable[gilda.Term]:
     from gilda import Term
     from gilda.process import normalize
 
@@ -537,4 +537,4 @@ def name_to_synonyms(name: str) -> Iterable[str]:
 
 if __name__ == "__main__":
     get_records(test=False, force=True)
-    # print(*ground_researcher("CT Hoyt"), sep="\n")  # noqa:T201
+    # print(*ground_researcher("CT Hoyt"), sep="\n") # noqa:ERA001

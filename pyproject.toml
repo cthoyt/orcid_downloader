@@ -1,7 +1,136 @@
 # See https://setuptools.readthedocs.io/en/latest/build_meta.html
 [build-system]
 requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta:__legacy__"
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orcid_downloader"
+version = "0.0.1-dev"
+description = "Download and process ORCID in bulk"
+readme = "README.md"
+authors = [
+    { name = "Charles Tapley Hoyt", email = "cthoyt@gmail.com" }
+]
+maintainers = [
+    { name = "Charles Tapley Hoyt", email = "cthoyt@gmail.com" }
+]
+
+# See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#classifiers
+# Search tags using the controlled vocabulary at https://pypi.org/classifiers
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Framework :: Pytest",
+    "Framework :: tox",
+    "Framework :: Sphinx",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+]
+keywords = [
+    "snekpack", # please keep this keyword to credit the cookiecutter-snekpack template
+    "cookiecutter",
+    "orcid",
+    "authorship",
+]
+
+# License Information. This can be any valid SPDX identifiers that can be resolved
+# with URLs like https://spdx.org/licenses/MIT
+# See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license
+license = { file = "LICENSE" }
+
+requires-python = ">=3.8"
+dependencies = [
+    "tqdm",
+    "lxml",
+    "pystow"
+]
+
+[project.optional-dependencies]
+tests = [
+    "pytest",
+    "coverage",
+]
+process = [
+    "pyobo",
+    "gilda",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "sphinx_automodapi",
+]
+
+# See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#urls
+[project.urls]
+"Bug Tracker" = "https://github.com/cthoyt/orcid_downloader/issues"
+Homepage = "https://github.com/cthoyt/orcid_downloader"
+Repository = "https://github.com/cthoyt/orcid_downloader.git"
+Documentation = "https://orcid_downloader.readthedocs.io"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+# this implicitly sets `packages = ":find"`
+where = ["src"]  # list of folders that contain the packages (["."] by default)
+
+# See https://setuptools.pypa.io/en/latest/userguide/datafiles.html
+[tool.setuptools.package-data]
+"*" = ["*.*"]
+
+
+
+[tool.cruft]
+skip = [
+    "**/__init__.py",
+    "tests/*"
+]
+
+# MyPy, see https://mypy.readthedocs.io/en/stable/config_file.html
+[tool.mypy]
+plugins = [
+    "pydantic.mypy",
+]
+
+# Doc8, see https://doc8.readthedocs.io/en/stable/readme.html#ini-file-usage
+[tool.doc8]
+max-line-length = 120
+
+# Coverage, see https://coverage.readthedocs.io/en/latest/config.html
+[tool.coverage.run]
+branch = true
+source = [
+    "orcid_downloader",
+]
+omit = [
+    "tests/*",
+    "docs/*",
+]
+
+[tool.coverage.paths]
+source = [
+    "src/orcid_downloader",
+    ".tox/*/lib/python*/site-packages/orcid_downloader",
+]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == \"__main__\":",
+    "if TYPE_CHECKING:",
+    "def __str__",
+    "def __repr__",
+]
 
 [tool.black]
 line-length = 100
@@ -13,3 +142,39 @@ multi_line_output = 3
 line_length = 100
 include_trailing_comma = true
 reverse_relative = true
+
+[tool.ruff]
+line-length = 100
+# extend-include = ["*.ipynb"]
+
+[tool.ruff.lint]
+# See https://docs.astral.sh/ruff/rules
+extend-select = [
+    "F", # pyflakes
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "C90", # mccabe
+    "I", # isort
+    "UP", # pyupgrade
+    "D", # pydocstyle
+    "B", # bugbear
+    "S", # bandit
+    "T20", # print
+    "N", # pep8 naming
+    "ERA", # eradicate commented out code
+    "NPY", # numpy checks
+    "RUF", # ruff rules
+]
+ignore = [
+    "D105", # Missing docstring in magic method
+    "E203", # Black conflicts with the following
+]
+
+# See https://docs.astral.sh/ruff/settings/#per-file-ignores
+[tool.ruff.lint.per-file-ignores]
+# Ignore commented out code in Sphinx configuration file
+"docs/source/conf.py" = ["ERA001"]
+"notebooks/*.ipynb" = ["T201"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"

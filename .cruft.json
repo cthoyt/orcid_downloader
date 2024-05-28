@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/cthoyt/cookiecutter-snekpack",
-  "commit": "795aaf959f9b67ad060294e7cff0221a35d4c910",
+  "commit": "3a6e550e03deebcfafc9d44aa4af72672bf2154c",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -13,6 +13,7 @@
       "github_repository_name": "orcid_downloader",
       "command_line_interface": false,
       "gitlab": false,
+      "__gh_slug": "cthoyt/orcid_downloader",
       "_template": "https://github.com/cthoyt/cookiecutter-snekpack"
     }
   },

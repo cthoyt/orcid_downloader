@@ -11,13 +11,13 @@
 <p align="center">
     <a href="https://github.com/cthoyt/orcid_downloader/actions/workflows/tests.yml">
         <img alt="Tests" src="https://github.com/cthoyt/orcid_downloader/actions/workflows/tests.yml/badge.svg" /></a>
-    <a href="https://pypi.org/project/orcid_downloader">
-        <img alt="PyPI" src="https://img.shields.io/pypi/v/orcid_downloader" /></a>
-    <a href="https://pypi.org/project/orcid_downloader">
-        <img alt="PyPI - Python Version" src="https://img.shields.io/pypi/pyversions/orcid_downloader" /></a>
+    <a href="https://pypi.org/project/orcid-downloader">
+        <img alt="PyPI" src="https://img.shields.io/pypi/v/orcid-downloader" /></a>
+    <a href="https://pypi.org/project/orcid-downloader">
+        <img alt="PyPI - Python Version" src="https://img.shields.io/pypi/pyversions/orcid-downloader" /></a>
     <a href="https://github.com/cthoyt/orcid_downloader/blob/main/LICENSE">
         <img alt="PyPI - License" src="https://img.shields.io/pypi/l/orcid_downloader" /></a>
-    <a href='https://orcid_downloader.readthedocs.io/en/latest/?badge=latest'>
+    <a href='https://orcid-downloader.readthedocs.io/en/latest/?badge=latest'>
         <img src='https://readthedocs.org/projects/orcid_downloader/badge/?version=latest' alt='Documentation Status' /></a>
     <a href="https://codecov.io/gh/cthoyt/orcid_downloader/branch/main">
         <img src="https://codecov.io/gh/cthoyt/orcid_downloader/branch/main/graph/badge.svg" alt="Codecov status" /></a>  

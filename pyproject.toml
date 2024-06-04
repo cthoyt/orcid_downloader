@@ -50,7 +50,9 @@ requires-python = ">=3.8"
 dependencies = [
     "tqdm",
     "lxml",
-    "pystow"
+    "pystow",
+    "pydantic",
+    "tabulate",
 ]
 
 [project.optional-dependencies]

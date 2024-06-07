@@ -9,15 +9,15 @@ import logging
 import tarfile
 import typing
 from collections import Counter
+from collections.abc import Iterable
 from functools import lru_cache, partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import parse_qs, urlparse
 
 import pystow
 from lxml import etree
 from pydantic import BaseModel, Field
-from tabulate import tabulate
 from tqdm.auto import tqdm
 
 from orcid_downloader.standardize import standardize_role
@@ -164,6 +164,7 @@ class Affiliation(BaseModel):
     role: str | None = None
     xrefs: dict[str, str] = Field(default_factory=dict, title="Database Cross-references")
     # xrefs includes ror, ringgold, grid, funderregistry, lei
+    # LEI see https://www.gleif.org/en/lei-data/gleif-concatenated-file/download-the-concatenated-file
 
 
 class Record(BaseModel):
@@ -264,6 +265,8 @@ def _process_file(file, ror_grounder: gilda.Grounder) -> Record | None:  # noqa:
         if label_name is not None:
             aliases.add(label_name)
 
+    # FIXME strip titles like Dr. and DR. from begininng of all names/aliases
+    # FIXME strip post-titles Francess Dufie Azumah (DR.)
     record: dict[str, Any] = dict(orcid=orcid, name=name)
     aliases.update(_iter_other_names(tree))
     if aliases:
@@ -693,6 +696,8 @@ def write_schema() -> None:
 
 
 def _summarize():  # noqa:C901
+    from tabulate import tabulate
+
     # count affiliations (breakdown by employer, education, combine)
     # count roles
     # count records with email
@@ -793,9 +798,9 @@ def write_counter(file, header, counter) -> None:
 
 
 def _main():
-    # write_schema()  # noqa:ERA001
+    write_schema()
     # iter_records(force=True)  # noqa:ERA001
-    _summarize()
+    # _summarize() # noqa:ERA001
     # get_gilda_grounder()  # noqa:ERA001
     # print(*ground_researcher("CT Hoyt"), sep="\n")  # noqa:ERA001
 

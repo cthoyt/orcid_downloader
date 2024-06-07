@@ -50,7 +50,6 @@ dependencies = [
     "lxml",
     "pystow",
     "pydantic",
-    "tabulate",
 ]
 
 [project.optional-dependencies]
@@ -61,6 +60,7 @@ tests = [
 process = [
     "pyobo",
     "gilda",
+    "tabulate",
 ]
 docs = [
     "sphinx",

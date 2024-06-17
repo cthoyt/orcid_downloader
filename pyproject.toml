@@ -50,6 +50,8 @@ dependencies = [
     "lxml",
     "pystow",
     "pydantic",
+    "pydantic_extra_types",
+    "pycountry",
 ]
 
 [project.optional-dependencies]
@@ -61,6 +63,10 @@ process = [
     "pyobo",
     "gilda",
     "tabulate",
+]
+autocomplete = [
+    "gilda",
+    "fastapi",
 ]
 docs = [
     "sphinx",

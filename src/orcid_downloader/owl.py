@@ -54,8 +54,7 @@ def write_owl_rdf() -> None:
                 continue
             parts = ["a h:", f'l: "{record.name}"']
             for alias in record.aliases:
-                if alias != record.name:  # FIXME this should be taken care of upstream
-                    parts.append(f's: "{alias}"')
+                parts.append(f's: "{alias}"')
             for prefix, value in sorted(record.xrefs.items()):
                 parts.append(f'x: "{prefix}:{value}"')
             file.write(f"o:{record.orcid} " + "; ".join(parts) + " .\n")

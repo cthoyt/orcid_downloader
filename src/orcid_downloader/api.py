@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import parse_qs, unquote, urlparse
 
 import pystow
-from gilda import ScoredMatch
 from lxml import etree
 from pydantic import BaseModel, Field
 from pydantic_extra_types.country import CountryAlpha2, _index_by_alpha2
@@ -855,7 +854,7 @@ def name_to_synonyms(name: str) -> Iterable[str]:
     yield family + ", " + first_first
 
 
-def ground_researcher(name: str) -> list[ScoredMatch]:
+def ground_researcher(name: str) -> list[gilda.ScoredMatch]:
     """Ground a name based on ORCID names/aliases."""
     from .lexical import get_orcid_grounder
 

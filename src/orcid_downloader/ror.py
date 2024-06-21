@@ -44,4 +44,4 @@ class RORGrounder(gilda.Grounder):
 @lru_cache(1)
 def get_ror_grounder() -> gilda.Grounder:
     """Get a grounder for ROR."""
-    return pyobo.gilda_utils.get_grounder("ror", grounder_cls=RORGrounder)
+    return pyobo.gilda_utils.get_grounder("ror", grounder_cls=RORGrounder, progress=False)

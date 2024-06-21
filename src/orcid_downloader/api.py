@@ -22,7 +22,6 @@ from pydantic_extra_types.country import CountryAlpha2, _index_by_alpha2
 from semantic_pydantic import SemanticField
 from tqdm.auto import tqdm
 
-from orcid_downloader.ror import get_ror_grounder
 from orcid_downloader.standardize import standardize_role
 
 if TYPE_CHECKING:
@@ -119,6 +118,8 @@ EXTERNAL_ID_SKIP = {
     "CTI Vitae": "dead website",
     "Pitt ID": "dead website",
     "VIVO Cornell": "dead website",
+    "Technical University of Denmark CWIS": "dead website",
+    "HKU ResearcherPage": "dead website",
 }
 EXTERNAL_ID_SKIP = {_norm_key(k): v for k, v in EXTERNAL_ID_SKIP.items()}
 #: Mapping from ORCID keys to Bioregistry prefixes for external IDs
@@ -340,6 +341,8 @@ def iter_records(*, force: bool = False, records_path: Path | None = None) -> It
                 yield Record.model_validate_json(line)
 
     else:
+        from orcid_downloader.ror import get_ror_grounder
+
         ror_grounder = get_ror_grounder()
         f = partial(_process_file, ror_grounder=ror_grounder)
 
@@ -376,6 +379,25 @@ def get_records(*, force: bool = False) -> dict[str, Record]:
 
 
 def _process_file(file, ror_grounder: gilda.Grounder) -> Record | None:  # noqa:C901
+    """Process a file obnect for an XML file.
+
+    :param file: An XML file object
+    :param ror_grounder: A grounder object for ROR
+    :return: A record
+
+    .. code-block:: python
+
+        grounder = get_ror_grounder()
+        with open("../../example.xml") as file:
+            print(
+                _process_file(file, grounder).model_dump_json(
+                    indent=2,
+                    exclude_none=True,
+                    exclude_unset=True,
+                    exclude_defaults=True,
+               )
+            )
+    """
     tree = etree.parse(file)  # noqa:S320
 
     orcid = tree.findtext(".//common:path", namespaces=NAMESPACES)
@@ -904,6 +926,9 @@ def write_schema() -> None:
 def write_summaries(*, force: bool = False):  # noqa:C901
     """Write summary files."""
     from tabulate import tabulate
+
+    # TODO this import isn't needed here except when re-analyzing without re-building
+    from orcid_downloader.ror import get_ror_grounder
 
     # count affiliations (breakdown by employer, education, combine)
     # count roles

@@ -22,6 +22,7 @@ COLUMNS = [
     "orcid",
     "name",
     "country",
+    "locale",
     "ror",
     "email",
     "homepage",
@@ -71,6 +72,7 @@ def write_sqlite(
                 record.orcid,
                 record.name,
                 record.country,
+                record.locale,
                 record.current_affiliation_ror,
                 record.email,
                 record.homepage,
@@ -108,6 +110,7 @@ def write_sqlite(
                     orcid text not null primary key,
                     name text not null,
                     country CHAR(2),
+                    locale text,
                     ror text,
                     email text,
                     homepage text,
@@ -145,9 +148,10 @@ class Organization(BaseModel):
 class Metadata(BaseModel):
     """A model representing the metadata associated with a researcher."""
 
-    orcid: str
+    orcid: str = SemanticField(..., prefix="orcid")
     name: str
     country: CountryAlpha2 | None = None
+    locale: str | None = None
     organization: Organization | None = None
     email: str | None = None
     homepage: str | None = None
@@ -166,7 +170,7 @@ def get_metadata(orcid: str) -> Metadata | None:
     with sqlite3.connect(PATH) as conn:
         res = conn.execute(
             """\
-                SELECT orcid, person.name, person.country, person.ror,
+                SELECT orcid, person.name, person.country, person.locale, person.ror,
                     organization.name, organization.country, email, homepage,
                     github, wos, dblp, scopus,
                     google, linkedin, wikidata, mastodon
@@ -183,6 +187,7 @@ def get_metadata(orcid: str) -> Metadata | None:
             orcid,
             name,
             country,
+            locale,
             ror,
             organization_name,
             organization_country,
@@ -206,6 +211,7 @@ def get_metadata(orcid: str) -> Metadata | None:
         orcid=orcid,
         name=name,
         country=country,
+        locale=locale,
         organization=organization,
         email=email,
         homepage=homepage,

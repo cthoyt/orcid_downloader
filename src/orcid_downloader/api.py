@@ -69,6 +69,7 @@ NAMESPACES = {
     "keyword": "http://www.orcid.org/ns/keyword",
     "membership": "http://www.orcid.org/ns/membership",
     "address": "http://www.orcid.org/ns/address",
+    "preferences": "http://www.orcid.org/ns/preferences",
 }
 MODULE = pystow.module("orcid", VERSION_2023.version)
 RECORDS_PATH = MODULE.join(name="records.jsonl.gz")
@@ -234,8 +235,9 @@ class Record(BaseModel):
     orcid: str = Field(..., title="ORCID")
     name: str
     homepage: str | None = Field(None)
-    country: CountryAlpha2 | None = Field(
-        None, description="The ISO 3166-1 alpha-2 country code (uppercase)"
+    locale: str | None = Field(None)
+    countries: list[CountryAlpha2] = Field(
+        default_factory=list, description="The ISO 3166-1 alpha-2 country codes (uppercase)"
     )
     aliases: list[str] = Field(default_factory=list)
     xrefs: dict[str, str] = Field(default_factory=dict, title="Database Cross-references")
@@ -250,6 +252,11 @@ class Record(BaseModel):
     def email(self) -> str | None:
         """Get the first email, if available."""
         return self.emails[0] if self.emails else None
+
+    @property
+    def country(self) -> str | None:
+        """Get the first country, if available."""
+        return self.countries[0] if self.countries else None
 
     @property
     def github(self) -> str | None:
@@ -434,8 +441,10 @@ def _process_file(file, ror_grounder: gilda.Grounder) -> Record | None:  # noqa:
     if keywords := _get_keywords(tree):
         record["keywords"] = sorted(keywords)
 
-    if country := _get_country(tree, orcid=orcid):
-        record["country"] = country
+    if countries := _get_countries(tree, orcid=orcid):
+        record["countries"] = countries
+    if locale := _get_locale(tree, orcid=orcid):
+        record["locale"] = locale
 
     return Record.parse_obj(record)
 
@@ -619,21 +628,31 @@ def _get_keywords(tree) -> Iterable[str]:
     ]
 
 
-def _get_country(tree, orcid) -> str | None:
-    value = tree.findtext(
+def _get_countries(tree, orcid) -> list[str]:
+    rv = []
+    for country in tree.findall(
         ".//address:addresses/address:address/address:country", namespaces=NAMESPACES
-    )
-    if not value:
+    ):
+        value = country.text
+        if not value:
+            continue
+        value = value.strip().upper()
+        if value == "XK":
+            # XK is a proposed code for Kosovo, but isn't valid.
+            # Only an issue for a few dozen records
+            continue
+        elif value not in _index_by_alpha2():
+            tqdm.write(f"[{orcid}] invalid 2 letter country code: {value}")
+            continue
+        rv.append(value)
+    return rv
+
+
+def _get_locale(tree, orcid) -> str | None:
+    value = tree.findtext(".//preferences:preferences/preferences:locale", namespaces=NAMESPACES)
+    if value is None:
         return None
-    value = value.strip().upper()
-    if value == "XK":
-        # XK is a proposed code for Kosovo, but isn't valid.
-        # Only an issue for a few dozen records
-        return None
-    elif value not in _index_by_alpha2():
-        tqdm.write(f"[{orcid}] invalid 2 letter country code: {value}")
-        return None
-    return value
+    return value.strip()
 
 
 def _get_works(tree, orcid) -> list[dict[str, str]]:

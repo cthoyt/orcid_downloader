@@ -50,6 +50,7 @@ dependencies = [
     "pydantic",
     "pydantic_extra_types",
     "pycountry",
+    "semantic_pydantic",
 ]
 
 [project.optional-dependencies]

@@ -19,6 +19,7 @@ import pystow
 from lxml import etree
 from pydantic import BaseModel, Field
 from pydantic_extra_types.country import CountryAlpha2, _index_by_alpha2
+from semantic_pydantic import SemanticField
 from tqdm.auto import tqdm
 
 from orcid_downloader.ror import get_ror_grounder
@@ -232,7 +233,7 @@ class Affiliation(BaseModel):
 class Record(BaseModel):
     """A model representing a person."""
 
-    orcid: str = Field(..., title="ORCID")
+    orcid: str = SemanticField(..., prefix="orcid")
     name: str
     homepage: str | None = Field(None)
     locale: str | None = Field(None)

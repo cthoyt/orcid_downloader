@@ -5,6 +5,7 @@ from contextlib import closing
 
 from pydantic import BaseModel
 from pydantic_extra_types.country import CountryAlpha2
+from semantic_pydantic import SemanticField
 from tqdm import tqdm
 
 from orcid_downloader.api import MODULE, iter_records
@@ -140,7 +141,7 @@ def write_sqlite(
 class Organization(BaseModel):
     """A model representing an organization."""
 
-    ror: str
+    ror: str = SemanticField(..., prefix="ror")
     name: str
     country: str
 
@@ -155,13 +156,13 @@ class Metadata(BaseModel):
     organization: Organization | None = None
     email: str | None = None
     homepage: str | None = None
-    github: str | None = None
-    wos: str | None = None
-    dblp: str | None = None
-    scopus: str | None = None
-    google: str | None = None
+    github: str | None = SemanticField(None, prefix="github")
+    wos: str | None = SemanticField(None, prefix="wos.researcher")
+    dblp: str | None = SemanticField(None, prefix="dblp.author")
+    scopus: str | None = SemanticField(None, prefix="scopus")
+    google: str | None = SemanticField(None, prefix="google.scholar")
     linkedin: str | None = None
-    wikidata: str | None = None
+    wikidata: str | None = SemanticField(None, prefix="wikidata")
     mastodon: str | None = None
 
 

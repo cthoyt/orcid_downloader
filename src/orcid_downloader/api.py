@@ -203,12 +203,20 @@ class Work(BaseModel):
     pubmed: str = Field(..., title="PubMed identifier")
 
 
+class Date(BaseModel):
+    """A model representing a date."""
+
+    year: int
+    month: int | None = None
+    day: int | None = None
+
+
 class Affiliation(BaseModel):
     """A model representing an affiliation (either education or employment)."""
 
     name: str
-    start: int | None = Field(None, title="Start Year")
-    end: int | None = Field(None, title="End Year")
+    start: Date | None = Field(None, title="Start Year")
+    end: Date | None = Field(None, title="End Year")
     role: str | None = None
     xrefs: dict[str, str] = Field(default_factory=dict, title="Database Cross-references")
     # xrefs includes ror, ringgold, grid, funderregistry, lei
@@ -738,19 +746,25 @@ def _get_affiliations(elements, grounder: gilda.Grounder):
         references = _get_disambiguated_organization(organization_element, name, grounder)
         record = dict(name=name.strip(), xrefs=references)
 
-        start_year = element.findtext(".//common:start-date//common:year", namespaces=NAMESPACES)
-        if start_year:
-            record["start"] = int(start_year)
-
-        end_year = element.findtext(".//common:end-date//common:year", namespaces=NAMESPACES)
-        if end_year:
-            record["end"] = int(end_year)
+        if (start_date := element.find(".//common:start-date", namespaces=NAMESPACES)) is not None:
+            record["start"] = _get_date(start_date)
+        if (end_date := element.find(".//common:end-date", namespaces=NAMESPACES)) is not None:
+            record["end"] = _get_date(end_date)
 
         if role := _get_role(element):
             record["role"] = role
 
         results.append(record)
     return results
+
+
+def _get_date(date_element) -> Date | None:
+    year = date_element.findtext(".//common:year", namespaces=NAMESPACES)
+    if year is None:
+        return None
+    month = date_element.findtext(".//common:month", namespaces=NAMESPACES)
+    day = date_element.findtext(".//common:day", namespaces=NAMESPACES)
+    return Date(year=year, month=month, day=day)
 
 
 def _get_disambiguated_organization(organization_element, name, grounder) -> dict[str, str]:

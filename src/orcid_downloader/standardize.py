@@ -521,6 +521,10 @@ REVERSE_REPLACEMENTS = {
         "PhD Microbiology",
         "Doctor en Ciencias Biológicas",
     },
+    "Habilitation": {
+        "Habilitation",
+        "habilitation",
+    },
     "Professor": {
         "professor",
         "Profesora",

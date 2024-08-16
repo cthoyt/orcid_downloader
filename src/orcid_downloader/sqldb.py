@@ -35,6 +35,7 @@ COLUMNS = [
     "linkedin",
     "wikidata",
     "mastodon",
+    "commons_image",
     "works",
 ]
 
@@ -44,12 +45,8 @@ def write_sqlite(
     organization_table_name="organization",
     *,
     name_index: bool = False,
-    force: bool = False,
 ) -> None:
     """Write a SQLite database."""
-    if not force and PATH.is_file():
-        return
-
     import pandas as pd
     from pyobo.sources.geonames import get_code_to_country
     from pyobo.sources.ror import get_latest
@@ -85,9 +82,10 @@ def write_sqlite(
                 record.linkedin,
                 record.wikidata,
                 record.mastodon,
+                record.commons_image,
                 len(record.works),
             )
-            for record in iter_records()
+            for record in iter_records(desc="Writing SQL database")
             if record.name
         ),
         columns=COLUMNS,
@@ -123,6 +121,7 @@ def write_sqlite(
                     linkedin text,
                     wikidata text,
                     mastodon text,
+                    commons_image text,
                     works int
                 );
             """
@@ -164,6 +163,7 @@ class Metadata(BaseModel):
     linkedin: str | None = None
     wikidata: str | None = SemanticField(None, prefix="wikidata")
     mastodon: str | None = None
+    commons_image: str | None = None
 
 
 def get_metadata(orcid: str) -> Metadata | None:
@@ -174,7 +174,7 @@ def get_metadata(orcid: str) -> Metadata | None:
                 SELECT orcid, person.name, person.country, person.locale, person.ror,
                     organization.name, organization.country, email, homepage,
                     github, wos, dblp, scopus,
-                    google, linkedin, wikidata, mastodon
+                    google, linkedin, wikidata, mastodon, commons_image
                 FROM person
                 LEFT JOIN organization ON person.ror = organization.ror
                 WHERE orcid = ?
@@ -189,7 +189,7 @@ def get_metadata(orcid: str) -> Metadata | None:
             name,
             country,
             locale,
-            ror,
+            organization_ror,
             organization_name,
             organization_country,
             email,
@@ -202,10 +202,11 @@ def get_metadata(orcid: str) -> Metadata | None:
             linkedin,
             wikidata,
             mastodon,
+            commons_image,
         ) = row
 
-    organization = ror and Organization(
-        ror=ror, name=organization_name, country=organization_country
+    organization = organization_ror and Organization(
+        ror=organization_ror, name=organization_name, country=organization_country
     )
 
     return Metadata(
@@ -224,9 +225,30 @@ def get_metadata(orcid: str) -> Metadata | None:
         linkedin=linkedin,
         wikidata=wikidata,
         mastodon=mastodon,
+        commons_image=commons_image,
     )
 
 
+def get_example_missing_wikidata() -> str | None:
+    """Get an example that has a current organization but no Wikidata."""
+    sql = """\
+        SELECT orcid
+        FROM person
+        WHERE ror IS NOT NULL AND github IS NOT NULL AND wikidata IS NULL
+        LIMIT 1
+    """
+    # there were 4,720 from the 2023 data when I started working
+    # on this that had ROR + GitHub - Wikidata
+    with sqlite3.connect(PATH) as conn:
+        res = conn.execute(sql)
+        row = res.fetchone()
+        if row is None:
+            return None  # though not likely
+        return row[0]
+
+
 if __name__ == "__main__":
-    write_sqlite(force=False)
     print(get_metadata("0000-0001-5049-4000"))  # noqa:T201
+    example_orcid = get_example_missing_wikidata()
+    if example_orcid:
+        print(get_metadata(example_orcid))  # noqa:T201

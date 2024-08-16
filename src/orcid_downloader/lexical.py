@@ -18,7 +18,8 @@ from gilda.resources.sqlite_adapter import SqliteEntries
 from gilda.term import TERMS_HEADER
 from tqdm import tqdm
 
-from orcid_downloader.api import MODULE, Record, _is_hq, iter_records, name_to_synonyms
+from orcid_downloader.api import MODULE, Record, iter_records
+from orcid_downloader.name_utils import name_to_synonyms
 
 __all__ = [
     "write_lexical",
@@ -103,7 +104,7 @@ def write_lexical():
 
         rows = (
             (term.norm_text, json.dumps(term.to_json()))
-            for record in iter_records()
+            for record in iter_records(desc="Writing Gilda SQLite index")
             if record.name
             for term in _record_to_gilda_terms(record)
         )
@@ -132,10 +133,10 @@ def write_gilda() -> None:
         hq_writer.writerow(TERMS_HEADER)
 
         # we don't need to filter duplicates globally
-        for record in iter_records():
-            is_hq = _is_hq(record)
+        for record in iter_records(desc="Writing Gilda TSV index"):
             if not record.name:
                 continue
+            is_hq = record.is_high_quality()
             for term in _record_to_gilda_terms(record):
                 row = term.to_list()
                 writer.writerow(row)

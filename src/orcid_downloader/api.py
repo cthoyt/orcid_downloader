@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import parse_qs, unquote, urlparse
 
+import bioregistry
 import pystow
 from lxml import etree
 from pydantic import BaseModel, Field
@@ -22,6 +23,7 @@ from pydantic_extra_types.country import CountryAlpha2, _index_by_alpha2
 from semantic_pydantic import SemanticField
 from tqdm.auto import tqdm
 
+from orcid_downloader.name_utils import clean_name
 from orcid_downloader.standardize import standardize_role
 
 if TYPE_CHECKING:
@@ -71,11 +73,11 @@ NAMESPACES = {
     "address": "http://www.orcid.org/ns/address",
     "preferences": "http://www.orcid.org/ns/preferences",
 }
-MODULE = pystow.module("orcid", VERSION_2023.version)
+MODULE_RAW = pystow.module("orcid", VERSION_2023.version)
+MODULE = MODULE_RAW.module("output")
 RECORDS_PATH = MODULE.join(name="records.jsonl.gz")
 RECORDS_HQ_PATH = MODULE.join(name="records_hq.jsonl.gz")
 SCHEMA_PATH = MODULE.join(name="schema.json")
-
 
 URL_NAMES_PATH = MODULE.join(name="url_names.tsv")
 EMAIL_PATH = MODULE.join(name="email.tsv")
@@ -120,6 +122,9 @@ EXTERNAL_ID_SKIP = {
     "VIVO Cornell": "dead website",
     "Technical University of Denmark CWIS": "dead website",
     "HKU ResearcherPage": "dead website",
+    "Digital Author ID": "DAI is not specific service",
+    "Digital Author ID (DAI)": "DAI is not specific service",
+    "dai": "DAI is not specific service",
 }
 EXTERNAL_ID_SKIP = {_norm_key(k): v for k, v in EXTERNAL_ID_SKIP.items()}
 #: Mapping from ORCID keys to Bioregistry prefixes for external IDs
@@ -132,31 +137,37 @@ EXTERNAL_ID_MAPPING = {
     "Scopus ID": "scopus",
     "ID de autor de Scopus": "scopus",
     "???person.personsources.scopusauthor???": "scopus",
-    "Loop profile": "loop",  # TODO add to bioregistry
+    "Loop profile": "loop",
     "github": "github",
     "ISNI": "isni",
     "Google Scholar": "google.scholar",
     "gnd": "gnd",
-    "Digital Author ID": "dai",  # TODO add to bioregistry
-    "Digital Author ID (DAI)": "dai",
-    "dai": "dai",
-    "Authenticus": "authenticus",  # TODO add to bioregistry
+    "Authenticus": "authenticus",
     "AuthenticusID": "authenticus",
     "AuthID": "authenticus",
-    "ID Dialnet": "dialnet",  # TODO add to bioregistry dialnet.unirioja.es/servlet/autor?codigo=$1
-    "Dialnet ID": "dialnet",
-    "SciProfiles": "sciprofiles",  # TODO add to bioregistry https://sciprofiles.com/profile/$1
+    "ID Dialnet": "dialnet.author",
+    "Dialnet ID": "dialnet.author",
+    "SciProfiles": "sciprofiles",
     "Sciprofile": "sciprofiles",
-    "Ciência ID": "ciencia",  # TODO add to bioregistry http://www.cienciavitae.pt/$1
-    "KAKEN": "kaken",  # TODO add to bioregistry https://nrid.nii.ac.jp/nrid/1000050211371
+    "Ciência ID": "cienciavitae",
+    "KAKEN": "kaken",
     "Researcher Name Resolver ID": "kaken",
-    # TODO add Social Science Research Network to bioregistry
-    #  https://papers.ssrn.com/sol3/cf_dev/AbsByAuth.cfm?per_id=3194769
-    "SSRN": "ssrn",
-    "socialscienceresearchnetwork": "ssrn",
-    "ssrnauthorpage": "ssrn",
-    "ssrnpage": "ssrn",
+    "SSRN": "ssrn.author",
+    "socialscienceresearchnetwork": "ssrn.author",
+    "ssrnauthorpage": "ssrn.author",
+    "ssrnpage": "ssrn.author",
 }
+
+for key, value in EXTERNAL_ID_MAPPING.items():
+    _resource = bioregistry.get_resource(value)
+    if _resource is None:
+        raise ValueError(f"Unregistered prefix in EXTERNAL_ID_MAPPING for {key} - {value}")
+    if _resource.prefix != value:
+        raise ValueError(
+            f"Mapping uses non-standard prefix for {key} - {value} should be {_resource.prefix}"
+        )
+
+
 EXTERNAL_ID_MAPPING = {_norm_key(k): v for k, v in EXTERNAL_ID_MAPPING.items()}
 UNMAPPED_EXTERNAL_ID: set[str] = set()
 PERSONAL_KEYS = {
@@ -197,7 +208,7 @@ PERSONAL_KEYS = {
 
 def ensure_summaries() -> Path:
     """Ensure the ORCID summaries file (32+ GB) is downloaded."""
-    return MODULE.ensure(url=VERSION_2023.url, name=VERSION_2023.fname)
+    return MODULE_RAW.ensure(url=VERSION_2023.url, name=VERSION_2023.fname)
 
 
 class Work(BaseModel):
@@ -249,6 +260,25 @@ class Record(BaseModel):
     memberships: list[Affiliation] = Field(default_factory=list)
     emails: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+    commons_image: str | None = None
+
+    @property
+    def commons_image_url(self) -> str | None:
+        """Get the Wikimedia Commons image URL, if available."""
+        if self.commons_image:
+            return f"http://commons.wikimedia.org/wiki/Special:FilePath/{self.commons_image}"
+        return None
+
+    def is_high_quality(self) -> bool:
+        """Return if the record is high quality."""
+        # just see if there's literally anything in there
+        return bool(
+            any("ror" in employment.xrefs for employment in self.employments)
+            or any("ror" in education.xrefs for education in self.educations)
+            # or any("ror" in membership.xrefs for membership in self.memberships)
+            or self.works
+            or self.xrefs
+        )
 
     @property
     def email(self) -> str | None:
@@ -310,12 +340,14 @@ class Record(BaseModel):
         """Guess the current affiliation and return its ROR identifier, if available."""
         # assume that if there are employments listed that are not over yet,
         # then these surpass education
-        employments = [e for e in self.employments if e.end is None]
-        if employments:
-            return employments[0].ror
-        educations = [e for e in self.educations if e.end is None]
-        if educations:
-            return educations[0].ror
+        for employment in self.employments:
+            if employment.ror and employment.end is None:
+                return employment.ror
+
+        for education in self.educations:
+            if education.ror and education.end is None:
+                return education.ror
+
         return None
 
 
@@ -328,7 +360,9 @@ def _iter_tarfile_members(path: Path):
     tar_file.close()
 
 
-def iter_records(*, force: bool = False, records_path: Path | None = None) -> Iterable[Record]:
+def iter_records(
+    *, force: bool = False, records_path: Path | None = None, desc: str = "Loading ORCID"
+) -> Iterable[Record]:
     """Parse ORCID summary XML files, takes about an hour."""
     if records_path is None:
         records_path = RECORDS_PATH
@@ -336,15 +370,23 @@ def iter_records(*, force: bool = False, records_path: Path | None = None) -> It
         tqdm.write(f"reading cached records from {records_path}")
         with gzip.open(records_path, "rt") as file:
             for line in tqdm(
-                file, unit_scale=True, unit="line", desc="Loading ORCID", total=VERSION_2023.size
+                file, unit_scale=True, unit="line", desc=desc, total=VERSION_2023.size
             ):
                 yield Record.model_validate_json(line)
 
     else:
         from orcid_downloader.ror import get_ror_grounder
+        from orcid_downloader.wikidata import get_orcid_to_commons_image, get_orcid_to_wikidata
 
         ror_grounder = get_ror_grounder()
-        f = partial(_process_file, ror_grounder=ror_grounder)
+        orcid_to_wikidata = get_orcid_to_wikidata()
+        orcid_to_wikimedia_commons = get_orcid_to_commons_image()
+        f = partial(
+            _process_file,
+            ror_grounder=ror_grounder,
+            orcid_to_wikidata=orcid_to_wikidata,
+            orcid_to_wikimedia_commons=orcid_to_wikimedia_commons,
+        )
 
         path = ensure_summaries()
         it = _iter_tarfile_members(path)
@@ -360,7 +402,7 @@ def iter_records(*, force: bool = False, records_path: Path | None = None) -> It
                     continue
                 line = record.model_dump_json(exclude_defaults=True, indent=None) + "\n"
                 records_file.write(line)
-                if _is_hq(record):
+                if record.is_high_quality():
                     records_hq_file.write(line)
                 yield record
 
@@ -378,11 +420,18 @@ def get_records(*, force: bool = False) -> dict[str, Record]:
     return {record.orcid: record for record in iter_records(force=force)}
 
 
-def _process_file(file, ror_grounder: gilda.Grounder) -> Record | None:  # noqa:C901
+def _process_file(  # noqa:C901
+    file,
+    ror_grounder: gilda.Grounder,
+    orcid_to_wikidata: dict[str, str],
+    orcid_to_wikimedia_commons: dict[str, str],
+) -> Record | None:
     """Process a file obnect for an XML file.
 
     :param file: An XML file object
     :param ror_grounder: A grounder object for ROR
+    :param orcid_to_wikidata: A one-to-one mapping from ORCID to Wikidata identifiers
+    :param orcid_to_wikimedia_commons: A mapping from ORCID to Wikimedia Commons image tags
     :return: A record
 
     .. code-block:: python
@@ -427,7 +476,7 @@ def _process_file(file, ror_grounder: gilda.Grounder) -> Record | None:  # noqa:
         if label_name is not None:
             aliases.add(label_name)
 
-    name = name and _clean_name(name)
+    name = name and clean_name(name)
     aliases.update(_iter_other_names(tree))
     if name in aliases:  # make sure there's no duplicate
         aliases.remove(name)
@@ -450,10 +499,14 @@ def _process_file(file, ror_grounder: gilda.Grounder) -> Record | None:  # noqa:
         record["memberships"] = memberships
 
     ids, homepage = _get_external_identifiers(tree, orcid=orcid)
+    if wikidata_id := orcid_to_wikidata.get(orcid):
+        ids["wikidata"] = wikidata_id
     if ids:
         record["xrefs"] = ids
     if homepage:
         record["homepage"] = homepage
+    if image := orcid_to_wikimedia_commons.get(orcid):
+        record["commons_image"] = image
 
     if works := _get_works(tree, orcid=orcid):
         record["works"] = works
@@ -477,34 +530,13 @@ def _reconcile_aliass(name: str | None, aliases: set[str]) -> tuple[str | None, 
     return name, aliases
 
 
-def _clean_name(name: str) -> str:
-    # strip titles like Dr. and DR. from begininng of all names/aliases
-    # strip post-titles Francess Dufie Azumah (DR.)
-    lower = name.lower()
-    if lower.startswith("professor "):
-        name = name[len("professor ") :].strip()
-    if lower.startswith("prof."):
-        name = name[len("prof.") :].strip()
-    if lower.startswith("dr "):
-        name = name[len("dr ") :]
-    if lower.startswith("dr."):
-        name = name[len("dr.") :].strip()
-    if lower.endswith("(dr)"):
-        name = name[: len("(dr)")].strip()
-    if lower.endswith("(dr.)"):
-        name = name[: len("(dr.)")].strip()
-    if lower.endswith(", m.d."):
-        name = name[: len(", m.d.")].strip()
-    return name
-
-
 def _iter_other_names(t) -> Iterable[str]:
     for part in t.findall(".//other-name:content", namespaces=NAMESPACES):
         part = part.text.strip()
         for z in part.split(";"):
             z = z.strip()
             if z is not None and " " in z and len(z) < 60:
-                yield _clean_name(z.strip())
+                yield clean_name(z.strip())
 
 
 UNKNOWN_SOURCES = {}
@@ -517,27 +549,35 @@ UNKNOWN_NAMES_FULL: dict[str, str] = {}
 def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:  # noqa:C901
     rv = {}
     homepage = None
-    for i in tree.findall(
+    for element in tree.findall(
         ".//external-identifier:external-identifiers/external-identifier:external-identifier",
         namespaces=NAMESPACES,
     ):
-        id_val = i.findtext(".//common:external-id-value", namespaces=NAMESPACES)
-        if not id_val:
+        local_unique_identifier = element.findtext(
+            ".//common:external-id-value", namespaces=NAMESPACES
+        )
+        if not local_unique_identifier:
             continue
-        id_type = i.findtext(".//common:external-id-type", namespaces=NAMESPACES)
+        id_type = element.findtext(".//common:external-id-type", namespaces=NAMESPACES)
         id_type_norm = _norm_key(id_type)
         if id_type_norm in EXTERNAL_ID_SKIP:
             continue
 
-        id_type_mapped = EXTERNAL_ID_MAPPING.get(id_type_norm)
-        if not id_type_mapped:
+        prefix = EXTERNAL_ID_MAPPING.get(id_type_norm)
+        if not prefix:
             if id_type not in UNMAPPED_EXTERNAL_ID:
                 UNMAPPED_EXTERNAL_ID.add(id_type)
-                id_url = i.findtext(".//common:external-id-url", namespaces=NAMESPACES)
-                tqdm.write(f"[{orcid}] unknown id '{id_type}' w/ val '{id_val}' at {id_url}")
+                id_url = element.findtext(".//common:external-id-url", namespaces=NAMESPACES)
+                tqdm.write(
+                    f"[{orcid}] unknown id '{id_type}' w/ val "
+                    f"'{local_unique_identifier}' at {id_url}"
+                )
             continue
 
-        rv[id_type_mapped] = id_val
+        if prefix == "wikidata" and not local_unique_identifier.startswith("Q"):
+            continue
+
+        rv[prefix] = local_unique_identifier
 
     for element in tree.findall(
         ".//researcher-url:researcher-urls/researcher-url:researcher-url", namespaces=NAMESPACES
@@ -552,6 +592,7 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
         url = url.removeprefix("http://")
         if url.startswith("github.com/"):
             identifier = url.removeprefix("github.com/")
+            identifier = identifier.split("?")[0]  # remove trash like ?tab=repositories
             if "/" not in identifier:  # i.e., this is not a specific repo
                 rv["github"] = identifier
         elif url.startswith("www.github.com/"):
@@ -579,10 +620,10 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
                 rv["google.scholar"] = identifier
         elif url.startswith("publons.com/author/"):
             identifier = url.removeprefix("publons.com/author/").split("/")[0]
-            rv["publons"] = identifier
+            rv["publons.researcher"] = identifier
         elif url.startswith("www.researchgate.net/profile/"):
             identifier = url.removeprefix("www.researchgate.net/profile/")
-            rv["researchgate"] = identifier
+            rv["researchgate.profile"] = identifier
         elif url.startswith("www.scopus.com/authid/detail.uri?authorId="):
             identifier = url.removeprefix("www.scopus.com/authid/detail.uri?authorId=")
             rv["scopus"] = identifier
@@ -590,11 +631,13 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
             identifier = url.removeprefix("www.webofscience.com/wos/author/record/")
             rv["wos.researcher"] = identifier
         elif url.startswith("lattes.cnpq.br/"):
-            rv["curriculolattes"] = url.removeprefix("lattes.cnpq.br/")
+            rv["lattes"] = url.removeprefix("lattes.cnpq.br/")
         elif url.startswith("dialnet.unirioja.es/servlet/autor?codigo="):
-            rv["dialnet"] = url.removeprefix("dialnet.unirioja.es/servlet/autor?codigo=")
+            rv["dialnet.author"] = url.removeprefix("dialnet.unirioja.es/servlet/autor?codigo=")
         elif url.startswith("papers.ssrn.com/sol3/cf_dev/AbsByAuth.cfm?per_id="):
-            rv["ssrn"] = url.removeprefix("papers.ssrn.com/sol3/cf_dev/AbsByAuth.cfm?per_id=")
+            rv["ssrn.author"] = url.removeprefix(
+                "papers.ssrn.com/sol3/cf_dev/AbsByAuth.cfm?per_id="
+            )
         elif url.startswith("osf.io/"):
             rv["osf"] = url.removeprefix("osf.io/")
         elif url.startswith("viaf.org/viaf/"):
@@ -609,9 +652,9 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
             )
             rv["loop"] = loop_identifier
         elif url.startswith("dblp.org/pid/"):
-            rv["dblp"] = url.removeprefix("dblp.org/pid/").removesuffix(".html")
+            rv["dblp.author"] = url.removeprefix("dblp.org/pid/").removesuffix(".html")
         elif url.startswith("dblp.uni-trier.de/pid/"):
-            rv["dblp"] = url.removeprefix("dblp.uni-trier.de/pid/").removesuffix(".html")
+            rv["dblp.author"] = url.removeprefix("dblp.uni-trier.de/pid/").removesuffix(".html")
         elif url.startswith("hub.docker.com/u/"):
             rv["dockerhub.user"] = url.removeprefix("hub.docker.com/u/")
         elif name:
@@ -847,69 +890,6 @@ def _get_role(element) -> str | None:
     return role
 
 
-def _is_hq(record: Record) -> bool:
-    # just see if there's literally anything in there
-    return bool(
-        any("ror" in employment.xrefs for employment in record.employments)
-        or any("ror" in education.xrefs for education in record.educations)
-        or record.works
-    )
-
-
-def name_to_synonyms(name: str) -> Iterable[str]:
-    """Create a synonym list from a full name."""
-    # assume last part is the last name, this isn't always correct, but :shrug:
-    # consider alternatives like https://pypi.org/project/nameparser/
-    *givens, family = name.split()
-    if not givens:
-        return
-
-    yield family + ", " + givens[0]
-    yield family + ", " + " ".join(givens)
-
-    if len(givens) > 1:
-        first_given, *middle_givens = givens
-        middle_given_initials = [g[0] for g in middle_givens]
-        yield family + ", " + first_given + " " + " ".join(middle_given_initials)
-        yield family + ", " + first_given + " " + "".join(f"{i}." for i in middle_given_initials)
-        yield family + ", " + first_given + " " + " ".join(f"{i}." for i in middle_given_initials)
-
-        yield first_given + " " + " ".join(middle_given_initials) + " " + family
-        yield first_given + " " + "".join(f"{i}." for i in middle_given_initials) + " " + family
-        yield first_given + " " + " ".join(f"{i}." for i in middle_given_initials) + " " + family
-
-    firsts = [given[0] for given in givens]
-    firsts_unspaced = "".join(firsts)
-    firsts_spaced = " ".join(firsts)
-    firsts_dotted = [f"{first}." for first in firsts]
-    firsts_dotted_unspaced = "".join(firsts_dotted)
-    firsts_dotted_spaced = " ".join(firsts_dotted)
-    first_first = firsts[0]
-
-    yield first_first + " " + family
-    yield first_first + ". " + family
-
-    yield firsts_unspaced + " " + family
-    yield firsts_spaced + " " + family
-    yield firsts_dotted_unspaced + " " + family
-    yield firsts_dotted_spaced + " " + family
-
-    yield family + " " + firsts_unspaced
-    yield family + " " + firsts_dotted_unspaced
-    yield family + " " + firsts_spaced
-    yield family + " " + firsts_dotted_spaced
-
-    yield family + ", " + firsts_unspaced
-    yield family + ", " + firsts_dotted_unspaced
-    yield family + ", " + firsts_spaced
-    yield family + ", " + firsts_dotted_spaced
-
-    yield family + " " + first_first
-    yield family + " " + first_first + "."
-    yield family + ", " + first_first + "."
-    yield family + ", " + first_first
-
-
 def ground_researcher(name: str) -> list[gilda.ScoredMatch]:
     """Ground a name based on ORCID names/aliases."""
     from .lexical import get_orcid_grounder
@@ -927,9 +907,6 @@ def write_summaries(*, force: bool = False):  # noqa:C901
     """Write summary files."""
     from tabulate import tabulate
 
-    # TODO this import isn't needed here except when re-analyzing without re-building
-    from orcid_downloader.ror import get_ror_grounder
-
     # count affiliations (breakdown by employer, education, combine)
     # count roles
     # count records with email
@@ -940,9 +917,10 @@ def write_summaries(*, force: bool = False):  # noqa:C901
     affiliation_xrefs_counter: Counter[str] = Counter()
     education_roles: Counter[str] = Counter()
     unstandardized_education_roles: Counter[str] = Counter()
+    unstandardized_education_roles_example: dict[str, str] = {}
     employment_roles: Counter[str] = Counter()
     affiliation_no_ror: Counter[str] = Counter()
-    grounder = get_ror_grounder()
+    affiliation_no_ror_example: dict[str, str] = {}
     with (
         open(GITHUBS_PATH, "w") as githubs_file,
         open(EMAIL_PATH, "w") as emails_file,
@@ -955,12 +933,13 @@ def write_summaries(*, force: bool = False):  # noqa:C901
         githubs_writer.writerow(("orcid", "github"))
         pubmeds_writer = csv.writer(pubmeds_file, delimiter="\t")
         pubmeds_writer.writerow(("orcid", "pubmed"))
+        # TODO write out bioregistry prefixes in sssom_file
         sssom_writer = csv.writer(sssom_file, delimiter="\t")
         sssom_writer.writerow(
             ("subject_id", "subject_label", "predicate_id", "object_id", "mapping_justification")
         )
 
-        for record in iter_records(force=force):
+        for record in iter_records(force=force, desc="Writing summaries"):
             if record.emails:
                 has_email += 1
                 for email in record.emails:
@@ -990,23 +969,31 @@ def write_summaries(*, force: bool = False):  # noqa:C901
                     education_roles[role_std] += 1
                     if not did_std:
                         unstandardized_education_roles[education.role] += 1
+                        if education.role not in unstandardized_education_roles_example:
+                            unstandardized_education_roles_example[education.role] = record.orcid
                 for k in education.xrefs:
                     affiliation_xrefs_counter[k] += 1
-                if "ror" not in education.xrefs and not grounder.ground(education.name):
+                if "ror" not in education.xrefs:  # and not grounder.ground(education.name):
                     affiliation_no_ror[education.name] += 1
+                    if education.name not in affiliation_no_ror_example:
+                        affiliation_no_ror_example[education.name] = record.orcid
 
             for employment in record.employments:
                 if employment.role:
                     employment_roles[employment.role] += 1
                 for k in employment.xrefs:
                     affiliation_xrefs_counter[k] += 1
-                if "ror" not in employment.xrefs and not grounder.ground(education.name):
+                if "ror" not in employment.xrefs:  # and not grounder.ground(education.name):
                     affiliation_no_ror[employment.name] += 1
+                    if employment.name not in affiliation_no_ror_example:
+                        affiliation_no_ror_example[employment.name] = record.orcid
 
             for membership in record.memberships:
                 # TODO role standardization?
-                if "ror" not in employment.xrefs and not grounder.ground(education.name):
+                if "ror" not in employment.xrefs:  # and not grounder.ground(education.name):
                     affiliation_no_ror[membership.name] += 1
+                    if membership.name not in affiliation_no_ror_example:
+                        affiliation_no_ror_example[membership.name] = record.orcid
 
             for work in record.works:
                 pubmed = _standardize_pubmed(work.pubmed)
@@ -1028,30 +1015,45 @@ def write_summaries(*, force: bool = False):  # noqa:C901
         write_counter(file, ("role", "count"), education_roles)
 
     with open(EDUCATION_ROLE_UNSTANDARDIZED_SUMMARY_PATH, "w") as file:
-        write_counter(file, ("role", "count"), unstandardized_education_roles)
+        write_counter(
+            file,
+            ("role", "count"),
+            unstandardized_education_roles,
+            examples=unstandardized_education_roles_example,
+        )
 
     with open(AFFILIATION_NO_ROR_PATH, "w") as file:
-        write_counter(file, ("name", "count"), affiliation_no_ror)
+        write_counter(
+            file, ("name", "count"), affiliation_no_ror, examples=affiliation_no_ror_example
+        )
 
     with gzip.open(EMPLOYMENT_ROLE_SUMMARY_PATH, "wt") as file:
         write_counter(file, ("role", "count"), employment_roles)
 
 
-def write_counter(file, header, counter) -> None:
+def write_counter(file, header, counter, examples=None) -> None:
     """Write a counter to a TSV file."""
     writer = csv.writer(file, delimiter="\t")
-    writer.writerow(header)
-    writer.writerows(counter.most_common())
+    if examples is not None:
+        writer.writerow((*header, "example"))
+        writer.writerows((k, count, examples.get(k)) for k, count in counter.most_common())
+    else:
+        writer.writerow(header)
+        writer.writerows(counter.most_common())
 
 
 def _process_example() -> Record | None:
     import gilda
 
+    from orcid_downloader.wikidata import get_orcid_to_commons_image, get_orcid_to_wikidata
+
     here = Path(__file__).parent.parent.parent.resolve()
     example_path = here.joinpath("example.xml")
     grounder = gilda.Grounder([])
+    orcid_to_wikimedia_commons = get_orcid_to_commons_image()
+    orcid_to_wikidata = get_orcid_to_wikidata()
     with example_path.open() as file:
-        res = _process_file(file, grounder)
+        res = _process_file(file, grounder, orcid_to_wikidata, orcid_to_wikimedia_commons)
     return res
 
 
@@ -1061,16 +1063,16 @@ def _main():
     from .sqldb import write_sqlite
 
     write_schema()
-    write_summaries()
+    write_summaries(force=True)
     tqdm.write("Writing SQLite")
     write_sqlite()
     tqdm.write("Writing OWL")
     write_owl_rdf()
     tqdm.write("Generating Gilda TSV (~30 min)")
     write_gilda()
-    tqdm.write("Generating Gilda TSV (~30 min)")
+    tqdm.write("Generating Gilda SQLite (~30 min)")
     write_lexical()
-    # print(*ground_researcher("CT Hoyt"), sep="\n")  # noqa:ERA001
+    print(*ground_researcher("CT Hoyt"), sep="\n")  # noqa:T201
 
 
 if __name__ == "__main__":

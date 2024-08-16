@@ -2,6 +2,9 @@
 
 import gzip
 
+import pyobo
+from tqdm import tqdm
+
 from orcid_downloader.api import MODULE, iter_records
 
 __all__ = [
@@ -19,10 +22,18 @@ PREAMBLE = """\
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 @prefix o: <https://orcid.org/> .
+@prefix r: <https://ror.org/> .
 @prefix h: <http://purl.obolibrary.org/obo/NCBITaxon_9606> .
+@prefix g: <http://purl.obolibrary.org/obo/OBI_0000245> .
 @prefix s: <http://www.geneontology.org/formats/oboInOwl#hasExactSynonym> .
 @prefix x: <http://www.w3.org/2004/02/skos/core#exactMatch> .
 @prefix l: <http://www.w3.org/2000/01/rdf-schema#label> .
+@prefix m: <http://www.w3.org/ns/org#memberOf> .
+@prefix w: <https://schema.org/worksFor> .
+@prefix e: <https://schema.org/alumniOf> .
+@prefix hp: <http://xmlns.com/foaf/0.1/homepage> .
+@prefix mb: <http://xmlns.com/foaf/0.1/mbox> .
+@prefix db: <http://xmlns.com/foaf/0.1/depicted_by> .
 
 <https://w3id.org/biopragmatics/resources/orcid.ttl> a owl:Ontology ;
     owl:versionInfo "2023"^^xsd:string ;
@@ -40,23 +51,81 @@ s: a owl:AnnotationProperty;
 x: a owl:AnnotationProperty;
     rdfs:label "exact match"^^xsd:string .
 
+w: a owl:AnnotationProperty;
+    rdfs:label "employed by"^^xsd:string .
+
+e: a owl:AnnotationProperty;
+    rdfs:label "educated at"^^xsd:string .
+
+m: a owl:AnnotationProperty;
+    rdfs:label "member of"^^xsd:string .
+
+hp: a owl:AnnotationProperty;
+    rdfs:label "homepage"^^xsd:string .
+
+mb: a owl:AnnotationProperty;
+    rdfs:label "email"^^xsd:string .
+
+g: a owl:Class ;
+    rdfs:label "Organization"^^xsd:string .
+
 h: a owl:Class ;
     rdfs:label "Homo sapiens"^^xsd:string .
+
+db: a owl:AnnotationProperty;
+    rdfs:label "depicted by"^^xsd:string .
 """
 
 
-def write_owl_rdf() -> None:
+def write_owl_rdf() -> None:  # noqa:C901
     """Write OWL RDF in a gzipped file."""
+    tqdm.write(f"Writing OWL RDF to {PATH}")
+
+    ror_id_to_name = {k: v.replace('"', '\\"') for k, v in pyobo.get_id_name_mapping("ror").items()}
+    ror_written = set()
+
     with gzip.open(PATH, "wt") as file:
         file.write(PREAMBLE + "\n")
-        for record in iter_records():
+        for record in iter_records(desc="Writing OWL RDF"):
             if not record.name:
                 continue
+            ror_parts = []
             parts = ["a h:", f'l: "{record.name}"']
             for alias in record.aliases:
                 parts.append(f's: "{alias}"')
             for prefix, value in sorted(record.xrefs.items()):
                 parts.append(f'x: "{prefix}:{value}"')
+            if record.commons_image:
+                parts.append(f"db: <{record.commons_image_url}>")
+            for org in record.employments:
+                if not org.ror:
+                    continue
+                if org.ror not in ror_written:
+                    ror_parts.append(f'r:{org.ror} a g:; l: "{ror_id_to_name[org.ror]}" .')
+                    ror_written.add(org.ror)
+                parts.append(f"w: r:{org.ror}")
+            for education_org in record.educations:
+                if not education_org.ror:
+                    continue
+                if education_org.ror not in ror_written:
+                    ror_parts.append(
+                        f'r:{education_org.ror} a g:; l: "{ror_id_to_name[education_org.ror]}" .'
+                    )
+                    ror_written.add(education_org.ror)
+                parts.append(f"e: r:{education_org.ror}")
+            for member_org in record.educations:
+                if not member_org.ror:
+                    continue
+                if member_org.ror not in ror_written:
+                    ror_parts.append(
+                        f'r:{member_org.ror} a g:; l: "{ror_id_to_name[member_org.ror]}" .'
+                    )
+                    ror_written.add(member_org.ror)
+                parts.append(f"m: r:{member_org.ror}")
+            if record.homepage:
+                parts.append(f"hp: <{record.homepage}>")
+            for part in ror_parts:
+                file.write(f"{part}\n")
             file.write(f"o:{record.orcid} " + "; ".join(parts) + " .\n")
 
 

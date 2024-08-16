@@ -51,6 +51,7 @@ dependencies = [
     "pydantic_extra_types",
     "pycountry",
     "semantic_pydantic",
+    "bioregistry>=0.11.13",
 ]
 
 [project.optional-dependencies]

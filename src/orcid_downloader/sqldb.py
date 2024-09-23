@@ -3,6 +3,7 @@
 import sqlite3
 from contextlib import closing
 
+import bioregistry
 from pydantic import BaseModel
 from pydantic_extra_types.country import CountryAlpha2
 from semantic_pydantic import SemanticField
@@ -204,6 +205,8 @@ def get_metadata(orcid: str) -> Metadata | None:
             mastodon,
             commons_image,
         ) = row
+        if not wos or not bioregistry.is_valid_identifier("wos.researcher", wos):
+            wos = None
 
     organization = organization_ror and Organization(
         ror=organization_ror, name=organization_name, country=organization_country

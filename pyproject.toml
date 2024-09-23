@@ -69,7 +69,9 @@ autocomplete = [
     "fastapi",
 ]
 docs = [
-    "sphinx<8.0",
+    # waiting on https://github.com/readthedocs/sphinx_rtd_theme/issues/1582
+    # to make sphinx 8 possible
+    "sphinx<8",
     "sphinx-rtd-theme",
     "sphinx_automodapi",
 ]
@@ -109,6 +111,12 @@ plugins = [
 # Doc8, see https://doc8.readthedocs.io/en/stable/readme.html#ini-file-usage
 [tool.doc8]
 max-line-length = 120
+
+# Pytest, see https://docs.pytest.org/en/stable/reference/customize.html#pyproject-toml
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+]
 
 # Coverage, see https://coverage.readthedocs.io/en/latest/config.html
 [tool.coverage.run]
@@ -172,6 +180,7 @@ extend-select = [
     "ERA", # eradicate commented out code
     "NPY", # numpy checks
     "RUF", # ruff rules
+    "C4", # comprehensions
 ]
 ignore = [
     "D105", # Missing docstring in magic method
@@ -180,9 +189,22 @@ ignore = [
 
 # See https://docs.astral.sh/ruff/settings/#per-file-ignores
 [tool.ruff.lint.per-file-ignores]
+# Ignore security issues in the version.py, which are inconsistent
+"src/orcid_downloader/version.py" = ["S603", "S607"]
 # Ignore commented out code in Sphinx configuration file
 "docs/source/conf.py" = ["ERA001"]
-"notebooks/*.ipynb" = ["T201"]
+# Prints are okay in notebooks
+"notebooks/**/*.ipynb" = ["T201"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
+
+[tool.ruff.lint.isort]
+relative-imports-order = "closest-to-furthest"
+known-third-party = [
+    "tqdm",
+]
+known-first-party = [
+    "orcid_downloader",
+    "tests",
+]

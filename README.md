@@ -148,11 +148,11 @@ available [here](https://github.com/cruft/cruft?tab=readme-ov-file#updating-a-pr
 
 ### 🥼 Testing
 
-After cloning the repository and installing `tox` and `tox-uv` with `pip install tox tox-uv`,
+After cloning the repository and installing `tox` with `pip install tox tox-uv`, 
 the unit tests in the `tests/` folder can be run reproducibly with:
 
 ```shell
-tox
+tox -e py
 ```
 
 Additionally, these tests are automatically re-run with each commit in a
@@ -250,9 +250,9 @@ be found [here](https://packaging.python.org/en/latest/specifications/pypirc).
 
 #### Uploading to PyPI
 
-After installing the package in development mode and installing `tox` and `tox-uv` with `pip install tox tox-uv`,
-the commands for making a new release are contained within the `finish` environment
-in `tox.ini`. Run the following from the shell:
+After installing the package in development mode and installing
+`tox` with `pip install tox tox-uv`,
+run the following from the shell:
 
 ```shell
 tox -e finish

@@ -483,7 +483,7 @@ def _process_file(  # noqa:C901
         aliases.remove(name)
     name, aliases = _reconcile_aliass(name, aliases)
 
-    record: dict[str, Any] = dict(orcid=orcid, name=name)
+    record: dict[str, Any] = {"orcid": orcid, "name": name}
     if aliases:
         record["aliases"] = sorted(aliases)
 
@@ -830,7 +830,7 @@ def _get_affiliations(elements, grounder: gilda.Grounder):
         if not name:
             continue
         references = _get_disambiguated_organization(organization_element, name, grounder)
-        record = dict(name=name.strip(), xrefs=references)
+        record = {"name": name.strip(), "xrefs": references}
 
         if (start_date := element.find(".//common:start-date", namespaces=NAMESPACES)) is not None:
             record["start"] = _get_date(start_date)

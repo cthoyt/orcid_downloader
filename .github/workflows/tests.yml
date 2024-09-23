@@ -28,7 +28,7 @@ jobs:
         run: |
           pip install tox tox-uv
       - name: Run command
-        run: tox run -e ${{ matrix.tox-command }}
+        run: tox -e ${{ matrix.tox-command }}
   docs:
     name: Documentation
     runs-on: ubuntu-latest
@@ -46,11 +46,11 @@ jobs:
           pip install tox tox-uv
           sudo apt-get install graphviz
       - name: Check RST conformity with doc8
-        run: tox run -e doc8
+        run: tox -e doc8
       - name: Check docstring coverage
-        run: tox run -e docstr-coverage
+        run: tox -e docstr-coverage
       - name: Check documentation build with Sphinx
-        run: tox run -e docs-test
+        run: tox -e docs-test
   tests:
     name: Tests
     runs-on: ${{ matrix.os }}
@@ -68,7 +68,7 @@ jobs:
         run: pip install tox tox-uv
       - name: Test with pytest and generate coverage file
         run:
-          tox run -e py
+          tox -e py
       - name: Upload coverage report to codecov
         uses: codecov/codecov-action@v1
         if: success()

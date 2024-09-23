@@ -34,6 +34,7 @@ __all__ = [
     "iter_records",
     "get_records",
     "ground_researcher",
+    "ground_researcher_unambiguous",
     "Record",
 ]
 
@@ -895,6 +896,14 @@ def ground_researcher(name: str) -> list[gilda.ScoredMatch]:
     from .lexical import get_orcid_grounder
 
     return get_orcid_grounder().ground(name)
+
+
+def ground_researcher_unambiguous(name: str) -> str | None:
+    """Ground a name based on ORCID names/aliases."""
+    matches = ground_researcher(name)
+    if len(matches) != 1:
+        return None
+    return matches[0].term.id
 
 
 def write_schema() -> None:

@@ -69,7 +69,7 @@ autocomplete = [
     "fastapi",
 ]
 docs = [
-    "sphinx",
+    "sphinx<8.0",
     "sphinx-rtd-theme",
     "sphinx_automodapi",
 ]

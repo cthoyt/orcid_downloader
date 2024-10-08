@@ -12,10 +12,10 @@ from tqdm import tqdm
 from orcid_downloader.api import MODULE, iter_records
 
 __all__ = [
-    "write_sqlite",
-    "Organization",
     "Metadata",
+    "Organization",
     "get_metadata",
+    "write_sqlite",
 ]
 
 

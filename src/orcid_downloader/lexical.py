@@ -22,9 +22,9 @@ from orcid_downloader.api import MODULE, Record, iter_records
 from orcid_downloader.name_utils import name_to_synonyms
 
 __all__ = [
-    "write_lexical",
-    "write_gilda",
     "get_orcid_grounder",
+    "write_gilda",
+    "write_lexical",
 ]
 
 GILDA_PATH = MODULE.join(name="gilda.tsv.gz")

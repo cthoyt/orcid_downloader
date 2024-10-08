@@ -30,12 +30,12 @@ if TYPE_CHECKING:
     import gilda
 
 __all__ = [
+    "Record",
     "ensure_summaries",
-    "iter_records",
     "get_records",
     "ground_researcher",
     "ground_researcher_unambiguous",
-    "Record",
+    "iter_records",
 ]
 
 logger = logging.getLogger(__name__)
@@ -445,7 +445,7 @@ def _process_file(  # noqa:C901
                     exclude_none=True,
                     exclude_unset=True,
                     exclude_defaults=True,
-               )
+                )
             )
     """
     tree = etree.parse(file)  # noqa:S320

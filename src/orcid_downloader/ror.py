@@ -8,8 +8,8 @@ import gilda
 import pyobo.gilda_utils
 
 __all__ = [
-    "get_ror_grounder",
     "RORGrounder",
+    "get_ror_grounder",
 ]
 
 

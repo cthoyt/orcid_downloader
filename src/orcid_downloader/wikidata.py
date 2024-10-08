@@ -6,8 +6,8 @@ import pystow
 import requests
 
 __all__ = [
-    "get_orcid_to_wikidata",
     "get_orcid_to_commons_image",
+    "get_orcid_to_wikidata",
 ]
 
 IMAGE_PATH = pystow.join("orcid", name="orcid_to_image.csv")

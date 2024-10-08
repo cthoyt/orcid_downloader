@@ -69,10 +69,8 @@ autocomplete = [
     "fastapi",
 ]
 docs = [
-    # waiting on https://github.com/readthedocs/sphinx_rtd_theme/issues/1582
-    # to make sphinx 8 possible
-    "sphinx<8",
-    "sphinx-rtd-theme",
+    "sphinx>=8",
+    "sphinx-rtd-theme>=3.0",
     "sphinx_automodapi",
 ]
 
@@ -146,19 +144,6 @@ exclude_lines = [
     "def __repr__",
 ]
 
-[tool.black]
-line-length = 100
-target-version = [
-    "py312",
-]
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 100
-include_trailing_comma = true
-reverse_relative = true
-
 [tool.ruff]
 line-length = 100
 # extend-include = ["*.ipynb"]
@@ -173,6 +158,7 @@ extend-select = [
     "I", # isort
     "UP", # pyupgrade
     "D", # pydocstyle
+    "DOC", # pydoclint
     "B", # bugbear
     "S", # bandit
     "T20", # print
@@ -208,3 +194,7 @@ known-first-party = [
     "orcid_downloader",
     "tests",
 ]
+
+[tool.ruff.format]
+# see https://docs.astral.sh/ruff/settings/#format_docstring-code-format
+docstring-code-format = true

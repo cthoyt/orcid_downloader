@@ -52,6 +52,7 @@ dependencies = [
     "pycountry",
     "semantic_pydantic",
     "bioregistry>=0.11.13",
+    "qualo",
 ]
 
 [project.optional-dependencies]

@@ -18,7 +18,7 @@ from gilda.resources.sqlite_adapter import SqliteEntries
 from gilda.term import TERMS_HEADER
 from tqdm import tqdm
 
-from orcid_downloader.api import MODULE, Record, iter_records
+from orcid_downloader.api import Record, VersionInfo, _get_output_module, iter_records
 from orcid_downloader.name_utils import name_to_synonyms
 
 __all__ = [
@@ -27,15 +27,13 @@ __all__ = [
     "write_lexical",
 ]
 
-GILDA_PATH = MODULE.join(name="gilda.tsv.gz")
-GILDA_HQ_PATH = MODULE.join(name="gilda_hq.tsv.gz")
-GILDA_DB_PATH = MODULE.join(name="orcid-gilda.db")
 
-
-@lru_cache(1)
-def get_orcid_grounder() -> Grounder:
+@lru_cache
+def get_orcid_grounder(version_info: VersionInfo | None = None) -> Grounder:
     """Get a Gilda Grounder object for ORCID."""
-    entries = UngroupedSqliteEntries(GILDA_DB_PATH)
+    module = _get_output_module(version_info)
+    path = module.join(name="orcid-gilda.db")
+    entries = UngroupedSqliteEntries(path)
     return ORCIDGrounder(entries)
 
 
@@ -92,11 +90,13 @@ class ORCIDGrounder(Grounder):
         return []
 
 
-def write_lexical():
+def write_lexical(*, version_info: VersionInfo | None = None) -> None:
     """Build a SQLite database file from a set of grounding entries."""
-    if GILDA_DB_PATH.is_file():
-        GILDA_DB_PATH.unlink()
-    with sqlite3.connect(GILDA_DB_PATH) as conn:
+    path = _get_output_module(version_info).join(name="orcid-gilda.db")
+
+    if path.is_file():
+        path.unlink()
+    with sqlite3.connect(path) as conn:
         with closing(conn.cursor()) as cur:
             # Create the table
             q = "CREATE TABLE terms (norm_text text not null, term text not null)"
@@ -104,7 +104,7 @@ def write_lexical():
 
         rows = (
             (term.norm_text, json.dumps(term.to_json()))
-            for record in iter_records(desc="Writing Gilda SQLite index")
+            for record in iter_records(desc="Writing Gilda SQLite index", version_info=version_info)
             if record.name
             for term in _record_to_gilda_terms(record)
         )
@@ -120,12 +120,16 @@ def write_lexical():
             cur.execute(q)
 
 
-def write_gilda() -> None:
+def write_gilda(*, version_info: VersionInfo | None = None) -> None:
     """Write Gilda indexes."""
+    module = _get_output_module(version_info)
+    gilda_lq_path = module.join(name="gilda.tsv.gz")
+    gilda_hq_path = module.join(name="gilda_hq.tsv.gz")
+
     tqdm.write("indexing for gilda")
     with (
-        gzip.open(GILDA_PATH, "wt") as gilda_file,
-        gzip.open(GILDA_HQ_PATH, "wt") as gilda_hq_file,
+        gzip.open(gilda_lq_path, "wt") as gilda_file,
+        gzip.open(gilda_hq_path, "wt") as gilda_hq_file,
     ):
         writer = csv.writer(gilda_file, delimiter="\t")
         hq_writer = csv.writer(gilda_hq_file, delimiter="\t")
@@ -133,7 +137,7 @@ def write_gilda() -> None:
         hq_writer.writerow(TERMS_HEADER)
 
         # we don't need to filter duplicates globally
-        for record in iter_records(desc="Writing Gilda TSV index"):
+        for record in iter_records(desc="Writing Gilda TSV index", version_info=version_info):
             if not record.name:
                 continue
             is_hq = record.is_high_quality()

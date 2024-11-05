@@ -24,6 +24,8 @@ def clean_name(name: str) -> str:
         name = name[len("professor ") :].strip()
     if lower.startswith("prof."):
         name = name[len("prof.") :].strip()
+    if lower.startswith("dr.-ing."):
+        name = name[len("dr.-ing.") :]
     if lower.startswith("dr "):
         name = name[len("dr ") :]
     if lower.startswith("dr."):
@@ -141,3 +143,19 @@ def name_to_synonyms(name: str) -> Iterable[str]:
     yield family + " " + first_first + "."
     yield family + ", " + first_first + "."
     yield family + ", " + first_first
+
+
+def reconcile_aliases(
+    name: str | None,
+    aliases: set[str],
+    *,
+    minimum_name_length: int = 1,
+) -> tuple[str | None, set[str]]:
+    # TODO if there is a comma in the main name picked, try and find an alias with no commas
+    aliases = {a for a in aliases if len(a) > minimum_name_length}
+    if name is not None and len(name) <= minimum_name_length:
+        name = None
+    if name is None and aliases:
+        name = max(aliases, key=len)
+        aliases = {a for a in aliases if a != name}
+    return name, aliases

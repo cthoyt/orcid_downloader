@@ -10,20 +10,23 @@ import tarfile
 import typing
 from collections import Counter
 from collections.abc import Iterable
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 import bioregistry
+import click
 import pystow
+from curies import NamedReference
 from lxml import etree
 from pydantic import BaseModel, Field
 from pydantic_extra_types.country import CountryAlpha2, _index_by_alpha2
 from semantic_pydantic import SemanticField
 from tqdm.auto import tqdm
 
-from orcid_downloader.name_utils import clean_name
+from orcid_downloader.name_utils import clean_name, reconcile_aliases
 from orcid_downloader.standardize import standardize_role
 
 if TYPE_CHECKING:
@@ -41,13 +44,27 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-class VersionInfo(NamedTuple):
-    """A tuple containing information for downloading ORCID data dumps."""
+@dataclass
+class VersionInfo:
+    """A tuple containing information for downloading ORCID data dumps.
+
+    Search on https://orcid.figshare.com/search?q=ORCID+Public+Data+File&sortBy=posted_date&sortType=desc
+    for the newest one.
+    """
 
     version: str
     url: str
     fname: str
     size: int
+    output_directory_name: str = "output"
+
+    @property
+    def raw_module(self) -> pystow.Module:
+        return pystow.module("orcid", self.version)
+
+    @property
+    def output_module(self) -> pystow.Module:
+        return self.raw_module.module(self.output_directory_name)
 
 
 #: See https://orcid.figshare.com/articles/dataset/ORCID_Public_Data_File_2023/24204912/1
@@ -58,6 +75,17 @@ VERSION_2023 = VersionInfo(
     fname="ORCID_2023_10_summaries.tar.gz",
     size=18_600_000,
 )
+
+#: See https://orcid.figshare.com/articles/dataset/ORCID_Public_Data_File_2024/27151305
+#: and download the "summaries" file. Skip all the activities files
+VERSION_2024 = VersionInfo(
+    version="2024",
+    url="https://orcid.figshare.com/ndownloader/files/49560102",
+    fname="ORCID_2024_10_summaries.tar.gz",
+    size=18_600_000,  # FIXME
+)
+
+VERSION_DEFAULT = VERSION_2023
 
 NAMESPACES = {
     "personal-details": "http://www.orcid.org/ns/personal-details",
@@ -74,30 +102,18 @@ NAMESPACES = {
     "address": "http://www.orcid.org/ns/address",
     "preferences": "http://www.orcid.org/ns/preferences",
 }
-MODULE_RAW = pystow.module("orcid", VERSION_2023.version)
-MODULE = MODULE_RAW.module("output")
-RECORDS_PATH = MODULE.join(name="records.jsonl.gz")
-RECORDS_HQ_PATH = MODULE.join(name="records_hq.jsonl.gz")
-SCHEMA_PATH = MODULE.join(name="schema.json")
-
-URL_NAMES_PATH = MODULE.join(name="url_names.tsv")
-EMAIL_PATH = MODULE.join(name="email.tsv")
-PUBMEDS_PATH = MODULE.join(name="pubmeds.tsv.gz")
-
-xrefs_folder = MODULE.module("xrefs")
-GITHUBS_PATH = xrefs_folder.join(name="github.tsv")
-XREFS_SUMMARY_PATH = xrefs_folder.join(name="README.md")
-SSSOM_PATH = xrefs_folder.join(name="sssom.tsv.gz")
 
 
-ROLES = MODULE.module("roles")
-AFFILIATION_XREFS_SUMMARY_PATH = ROLES.join(name="affiliation_xref_summary.tsv")
-EDUCATION_ROLE_SUMMARY_PATH = ROLES.join(name="education_role_summary.tsv.gz")
-EDUCATION_ROLE_UNSTANDARDIZED_SUMMARY_PATH = ROLES.join(
-    name="education_role_unstandardized_summary.tsv"
-)
-EMPLOYMENT_ROLE_SUMMARY_PATH = ROLES.join(name="employment_role_summary.tsv.gz")
-AFFILIATION_NO_ROR_PATH = ROLES.join(name="affiliation_missing_ror.tsv")
+def _get_raw_module(*, version_info: VersionInfo | None = None) -> pystow.Module:
+    if version_info is None:
+        version_info = VERSION_DEFAULT
+    return version_info.raw_module
+
+
+def _get_output_module(version_info: VersionInfo | None = None) -> pystow.Module:
+    if version_info is None:
+        version_info = VERSION_DEFAULT
+    return version_info.output_module
 
 
 def _norm_key(id_type):
@@ -168,7 +184,6 @@ for key, value in EXTERNAL_ID_MAPPING.items():
             f"Mapping uses non-standard prefix for {key} - {value} should be {_resource.prefix}"
         )
 
-
 EXTERNAL_ID_MAPPING = {_norm_key(k): v for k, v in EXTERNAL_ID_MAPPING.items()}
 UNMAPPED_EXTERNAL_ID: set[str] = set()
 PERSONAL_KEYS = {
@@ -207,9 +222,11 @@ PERSONAL_KEYS = {
 }
 
 
-def ensure_summaries() -> Path:
+def ensure_summaries(*, version_info: VersionInfo) -> Path:
     """Ensure the ORCID summaries file (32+ GB) is downloaded."""
-    return MODULE_RAW.ensure(url=VERSION_2023.url, name=VERSION_2023.fname)
+    return _get_raw_module(version_info=version_info).ensure(
+        url=version_info.url, name=version_info.fname
+    )
 
 
 class Work(BaseModel):
@@ -232,8 +249,9 @@ class Affiliation(BaseModel):
     name: str
     start: Date | None = Field(None, title="Start Year")
     end: Date | None = Field(None, title="End Year")
-    role: str | None = None
+    role: None | str | NamedReference = None
     xrefs: dict[str, str] = Field(default_factory=dict, title="Database Cross-references")
+
     # xrefs includes ror, ringgold, grid, funderregistry, lei
     # LEI see https://www.gleif.org/en/lei-data/gleif-concatenated-file/download-the-concatenated-file
 
@@ -247,7 +265,7 @@ class Record(BaseModel):
     """A model representing a person."""
 
     orcid: str = SemanticField(..., prefix="orcid")
-    name: str
+    name: str = Field(..., min_length=1)
     homepage: str | None = Field(None)
     locale: str | None = Field(None)
     countries: list[CountryAlpha2] = Field(
@@ -272,6 +290,8 @@ class Record(BaseModel):
 
     def is_high_quality(self) -> bool:
         """Return if the record is high quality."""
+        if not self.name:
+            return False
         # just see if there's literally anything in there
         return bool(
             any("ror" in employment.xrefs for employment in self.employments)
@@ -362,16 +382,24 @@ def _iter_tarfile_members(path: Path):
 
 
 def iter_records(
-    *, force: bool = False, records_path: Path | None = None, desc: str = "Loading ORCID"
+    *,
+    force: bool = False,
+    records_path: Path | None = None,
+    desc: str = "Loading ORCID",
+    head: int | None = None,
+    version_info: VersionInfo | None,
 ) -> Iterable[Record]:
     """Parse ORCID summary XML files, takes about an hour."""
+    if version_info is None:
+        version_info = VERSION_DEFAULT
+    module = _get_output_module(version_info)
     if records_path is None:
-        records_path = RECORDS_PATH
+        records_path = module.join(name="records.jsonl.gz")
     if not force and records_path.is_file():
         tqdm.write(f"reading cached records from {records_path}")
         with gzip.open(records_path, "rt") as file:
             for line in tqdm(
-                file, unit_scale=True, unit="line", desc=desc, total=VERSION_2023.size
+                file, unit_scale=True, unit="line", desc=desc, total=version_info.size
             ):
                 yield Record.model_validate_json(line)
 
@@ -389,15 +417,33 @@ def iter_records(
             orcid_to_wikimedia_commons=orcid_to_wikimedia_commons,
         )
 
-        path = ensure_summaries()
+        path = ensure_summaries(version_info=version_info)
         it = _iter_tarfile_members(path)
         # TODO use process_map with chunksize=50_000
 
+        if head is not None:
+            # only keep the first `head` entries
+            it = (val for val, _ in zip(it, range(head), strict=False))
+            total = head
+        else:
+            total = version_info.size
+
+        from orcid_downloader.standardize import write_role_counters
+
         with (
             gzip.open(records_path, "wt") as records_file,
-            gzip.open(RECORDS_HQ_PATH, "wt") as records_hq_file,
+            gzip.open(module.join(name="records_hq.jsonl.gz"), "wt") as records_hq_file,
         ):
-            for file in tqdm(it, unit_scale=True, unit="record", total=VERSION_2023.size):
+            for i, file in enumerate(
+                tqdm(
+                    it,
+                    unit_scale=True,
+                    unit="record",
+                    total=total,
+                    desc=f"Processing ORCID {version_info.version}",
+                ),
+                start=1,
+            ):
                 record: Record | None = f(file)
                 if record is None:
                     continue
@@ -405,9 +451,11 @@ def iter_records(
                 records_file.write(line)
                 if record.is_high_quality():
                     records_hq_file.write(line)
+                if i % 1_000_000 == 0:
+                    write_role_counters()
                 yield record
 
-        with URL_NAMES_PATH.open("w") as file:
+        with module.join(name="url_names.tsv").open("w") as file:
             writer = csv.writer(file, delimiter="\t")
             writer.writerow(("norm_name", "name", "count", "example"))
             writer.writerows(
@@ -416,9 +464,11 @@ def iter_records(
             )
 
 
-def get_records(*, force: bool = False) -> dict[str, Record]:
+def get_records(
+    *, force: bool = False, version_info: VersionInfo | None = None
+) -> dict[str, Record]:
     """Parse ORCID summary XML files, takes about an hour."""
-    return {record.orcid: record for record in iter_records(force=force)}
+    return {record.orcid: record for record in iter_records(force=force, version_info=version_info)}
 
 
 def _process_file(  # noqa:C901
@@ -481,7 +531,10 @@ def _process_file(  # noqa:C901
     aliases.update(_iter_other_names(tree))
     if name in aliases:  # make sure there's no duplicate
         aliases.remove(name)
-    name, aliases = _reconcile_aliass(name, aliases)
+    name, aliases = reconcile_aliases(name, aliases)
+    # despite best efforts, no names are possible
+    if name is None:
+        return None
 
     record: dict[str, Any] = {"orcid": orcid, "name": name}
     if aliases:
@@ -524,11 +577,6 @@ def _process_file(  # noqa:C901
         record["locale"] = locale
 
     return Record.parse_obj(record)
-
-
-def _reconcile_aliass(name: str | None, aliases: set[str]) -> tuple[str | None, set[str]]:
-    # TODO if there is a comma in the main name picked, try and find an alias with no commas
-    return name, aliases
 
 
 def _iter_other_names(t) -> Iterable[str]:
@@ -881,21 +929,25 @@ def _get_disambiguated_organization(organization_element, name, grounder) -> dic
 MINIMUM_ROLE_LENGTH = 4
 
 
-def _get_role(element) -> str | None:
-    role = element.findtext(".//common:role-title", namespaces=NAMESPACES)
-    if not role:
+def _get_role(element) -> NamedReference | str | None:
+    text = element.findtext(".//common:role-title", namespaces=NAMESPACES)
+    if not text:
         return None
-    role, _ = standardize_role(role)
-    if len(role) < MINIMUM_ROLE_LENGTH:
+    label, _, reference = standardize_role(text)
+    if len(label) < MINIMUM_ROLE_LENGTH:
         return None
-    return role
+    if reference:
+        return reference
+    return label
 
 
-def ground_researcher(name: str) -> list[gilda.ScoredMatch]:
+def ground_researcher(
+    name: str, *, version_info: VersionInfo | None = None
+) -> list[gilda.ScoredMatch]:
     """Ground a name based on ORCID names/aliases."""
     from .lexical import get_orcid_grounder
 
-    return get_orcid_grounder().ground(name)
+    return get_orcid_grounder(version_info=version_info).ground(name)
 
 
 def ground_researcher_unambiguous(name: str) -> str | None:
@@ -906,13 +958,13 @@ def ground_researcher_unambiguous(name: str) -> str | None:
     return matches[0].term.id
 
 
-def write_schema() -> None:
+def write_schema(path: Path) -> None:
     """Write the JSON schema."""
     schema = Record.model_json_schema()
-    SCHEMA_PATH.write_text(json.dumps(schema, indent=2))
+    path.write_text(json.dumps(schema, indent=2))
 
 
-def write_summaries(*, force: bool = False):  # noqa:C901
+def write_summaries(*, version_info: VersionInfo | None = None, force: bool = False):  # noqa:C901
     """Write summary files."""
     from tabulate import tabulate
 
@@ -930,11 +982,15 @@ def write_summaries(*, force: bool = False):  # noqa:C901
     employment_roles: Counter[str] = Counter()
     affiliation_no_ror: Counter[str] = Counter()
     affiliation_no_ror_example: dict[str, str] = {}
+
+    module = _get_output_module(version_info)
+
+    xrefs_folder = module.module("xrefs")
     with (
-        open(GITHUBS_PATH, "w") as githubs_file,
-        open(EMAIL_PATH, "w") as emails_file,
-        gzip.open(PUBMEDS_PATH, "wt") as pubmeds_file,
-        gzip.open(SSSOM_PATH, "wt") as sssom_file,
+        xrefs_folder.join(name="github.tsv").open("w") as githubs_file,
+        module.join(name="email.tsv").open("w") as emails_file,
+        gzip.open(module.join(name="pubmeds.tsv.gz"), "wt") as pubmeds_file,
+        gzip.open(xrefs_folder.join(name="sssom.tsv.gz"), "wt") as sssom_file,
     ):
         emails_writer = csv.writer(emails_file, delimiter="\t")
         emails_writer.writerow(("orcid", "email"))
@@ -948,7 +1004,9 @@ def write_summaries(*, force: bool = False):  # noqa:C901
             ("subject_id", "subject_label", "predicate_id", "object_id", "mapping_justification")
         )
 
-        for record in iter_records(force=force, desc="Writing summaries"):
+        for record in iter_records(
+            force=force, desc="Writing summaries", version_info=version_info
+        ):
             if record.emails:
                 has_email += 1
                 for email in record.emails:
@@ -973,33 +1031,30 @@ def write_summaries(*, force: bool = False):  # noqa:C901
                 xrefs_counter[k] += 1
 
             for education in record.educations:
-                if education.role:
-                    role_std, did_std = standardize_role(education.role)
-                    education_roles[role_std] += 1
-                    if not did_std:
-                        unstandardized_education_roles[education.role] += 1
-                        if education.role not in unstandardized_education_roles_example:
-                            unstandardized_education_roles_example[education.role] = record.orcid
+                if isinstance(education.role, str):
+                    unstandardized_education_roles[education.role] += 1
+                    if education.role not in unstandardized_education_roles_example:
+                        unstandardized_education_roles_example[education.role] = record.orcid
                 for k in education.xrefs:
                     affiliation_xrefs_counter[k] += 1
-                if "ror" not in education.xrefs:  # and not grounder.ground(education.name):
+                if education.ror is None:  # and not grounder.ground(education.name):
                     affiliation_no_ror[education.name] += 1
                     if education.name not in affiliation_no_ror_example:
                         affiliation_no_ror_example[education.name] = record.orcid
 
             for employment in record.employments:
-                if employment.role:
+                if isinstance(employment.role, str):
                     employment_roles[employment.role] += 1
                 for k in employment.xrefs:
                     affiliation_xrefs_counter[k] += 1
-                if "ror" not in employment.xrefs:  # and not grounder.ground(education.name):
+                if employment.ror is None:  # and not grounder.ground(education.name):
                     affiliation_no_ror[employment.name] += 1
                     if employment.name not in affiliation_no_ror_example:
                         affiliation_no_ror_example[employment.name] = record.orcid
 
             for membership in record.memberships:
                 # TODO role standardization?
-                if "ror" not in employment.xrefs:  # and not grounder.ground(education.name):
+                if employment.ror is None:  # and not grounder.ground(education.name):
                     affiliation_no_ror[membership.name] += 1
                     if membership.name not in affiliation_no_ror_example:
                         affiliation_no_ror_example[membership.name] = record.orcid
@@ -1009,7 +1064,7 @@ def write_summaries(*, force: bool = False):  # noqa:C901
                 if pubmed:
                     pubmeds_writer.writerow((record.orcid, pubmed))
 
-    XREFS_SUMMARY_PATH.write_text(
+    xrefs_folder.join(name="README.md").write_text(
         f"""\
 # Cross References Summary
 
@@ -1017,13 +1072,14 @@ def write_summaries(*, force: bool = False):  # noqa:C901
     """.rstrip()
     )
 
-    with AFFILIATION_XREFS_SUMMARY_PATH.open("w") as file:
+    roles_module = module.module("roles")
+    with roles_module.join(name="affiliation_xref_summary.tsv").open("w") as file:
         write_counter(file, ("prefix", "count"), affiliation_xrefs_counter)
 
-    with gzip.open(EDUCATION_ROLE_SUMMARY_PATH, "wt") as file:
+    with gzip.open(roles_module.join(name="education_role_summary.tsv.gz"), "wt") as file:
         write_counter(file, ("role", "count"), education_roles)
 
-    with open(EDUCATION_ROLE_UNSTANDARDIZED_SUMMARY_PATH, "w") as file:
+    with roles_module.join(name="education_role_unstandardized_summary.tsv").open("w") as file:
         write_counter(
             file,
             ("role", "count"),
@@ -1031,12 +1087,12 @@ def write_summaries(*, force: bool = False):  # noqa:C901
             examples=unstandardized_education_roles_example,
         )
 
-    with open(AFFILIATION_NO_ROR_PATH, "w") as file:
+    with roles_module.join(name="affiliation_missing_ror.tsv").open("w") as file:
         write_counter(
             file, ("name", "count"), affiliation_no_ror, examples=affiliation_no_ror_example
         )
 
-    with gzip.open(EMPLOYMENT_ROLE_SUMMARY_PATH, "wt") as file:
+    with gzip.open(roles_module.join(name="employment_role_summary.tsv.gz"), "wt") as file:
         write_counter(file, ("role", "count"), employment_roles)
 
 
@@ -1066,23 +1122,46 @@ def _process_example() -> Record | None:
     return res
 
 
-def _main():
+@click.command()
+@click.option("--test", is_flag=True)
+def main(test: bool) -> None:
+    """Process ORCID."""
+    if test:
+        version_info = VersionInfo(
+            version=VERSION_DEFAULT.version,
+            url=VERSION_DEFAULT.url,
+            fname=VERSION_DEFAULT.fname,
+            size=VERSION_DEFAULT.size,
+            output_directory_name="output-test",
+        )
+        list(iter_records(force=True, version_info=version_info, head=10_000))
+    else:
+        version_info = VERSION_DEFAULT
+
     from .lexical import write_gilda, write_lexical
     from .owl import write_owl_rdf
     from .sqldb import write_sqlite
 
-    write_schema()
-    write_summaries(force=True)
+    schema_path = _get_output_module(version_info).join(name="schema.json")
+    write_schema(schema_path)
+
+    write_summaries(version_info=version_info, force=not test)
+
     tqdm.write("Writing SQLite")
-    write_sqlite()
+    write_sqlite(version_info=version_info)
+
     tqdm.write("Writing OWL")
-    write_owl_rdf()
+    write_owl_rdf(version_info=version_info)
+
     tqdm.write("Generating Gilda TSV (~30 min)")
-    write_gilda()
+    write_gilda(version_info=version_info)
+
     tqdm.write("Generating Gilda SQLite (~30 min)")
-    write_lexical()
-    print(*ground_researcher("CT Hoyt"), sep="\n")  # noqa:T201
+    write_lexical(version_info=version_info)
+
+    # Test grounding
+    print(*ground_researcher("CT Hoyt", version_info=version_info), sep="\n")  # noqa:T201
 
 
 if __name__ == "__main__":
-    _main()
+    main()

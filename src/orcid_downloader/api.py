@@ -44,7 +44,7 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class VersionInfo:
     """A tuple containing information for downloading ORCID data dumps.
 

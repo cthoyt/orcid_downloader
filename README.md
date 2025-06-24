@@ -54,9 +54,6 @@ Grounding can be done on the name field, aliases, and credit name field:
 [Match(reference=NamedReference(prefix='orcid', identifier='0000-0003-4423-4370', name='Charles Tapley Hoyt'), score=0.5555555555555556)]
 ```
 
-> **Note**
-> It takes about 5 minutes to warm up the grounder, if the data has already been downloaded and processed.
-
 ## 🚀 Installation
 
 The most recent release can be installed from

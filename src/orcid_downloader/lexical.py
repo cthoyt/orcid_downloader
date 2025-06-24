@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
-import csv
-import gzip
 import json
 import sqlite3
 from collections.abc import Iterable
 from contextlib import closing
 from functools import lru_cache
 from itertools import batched
+from pathlib import Path
+from typing import Any
 
 import gilda
 import pandas as pd
-from gilda import Grounder, ScoredMatch, Term
+import ssslm
+from curies import NamedReference
+from curies.vocabulary import exact_match, has_label
 from gilda.resources.sqlite_adapter import SqliteEntries
-from gilda.term import TERMS_HEADER
+from pystow.utils import safe_open_writer
 from tqdm import tqdm
 
 from orcid_downloader.api import Record, VersionInfo, _get_output_module, iter_records
@@ -23,18 +25,33 @@ from orcid_downloader.name_utils import name_to_synonyms
 
 __all__ = [
     "get_orcid_grounder",
-    "write_gilda",
     "write_lexical",
+    "write_lexical_sqlite",
 ]
 
+from ssslm import LiteralMapping, LiteralMappingTuple
 
-@lru_cache
-def get_orcid_grounder(version_info: VersionInfo | None = None) -> Grounder:
-    """Get a Gilda Grounder object for ORCID."""
+
+def get_orcid_grounder(version_info: VersionInfo | None = None) -> ssslm.Grounder:
+    """Get a grounder object for ORCID."""
     module = _get_output_module(version_info)
     path = module.join(name="orcid-gilda.db")
-    entries = UngroupedSqliteEntries(path)
-    return ORCIDGrounder(entries)
+    return _get_orcid_grounder_helper(path)
+
+
+@lru_cache(1)
+def _get_orcid_grounder_helper(path: str | Path) -> ssslm.Grounder:
+    path_norm = Path(path).expanduser().resolve().as_posix()
+    entries = UngroupedSqliteEntries(path_norm)  # type:ignore[arg-type]
+    gilda_grounder = NonIndexingGildaGrounder(entries)
+    return ExtendedMatcher(gilda_grounder)
+
+
+class NonIndexingGildaGrounder(gilda.Grounder):
+    """A custom grounder for ORCID."""
+
+    def _build_prefix_index(self) -> None:
+        pass  # override building this to save 60 seconds on startup
 
 
 class UngroupedSqliteEntries(SqliteEntries, dict):
@@ -47,14 +64,14 @@ class UngroupedSqliteEntries(SqliteEntries, dict):
             terms = res.fetchall()
             if not terms:
                 return default
-            return [Term(**json.loads(term)) for (term,) in terms]
+            return [gilda.Term(**json.loads(term)) for (term,) in terms]
 
     def values(self):
         """Iterate over the terms in the lexical index."""
         with sqlite3.connect(self.db) as conn:
             res = conn.execute("SELECT term FROM terms")
             for (result,) in res.fetchall():
-                yield Term(**json.loads(result))
+                yield gilda.Term(**json.loads(result))
 
     def __len__(self) -> int:
         """Get the number of unique keys in the lexical index."""
@@ -72,25 +89,20 @@ class UngroupedSqliteEntries(SqliteEntries, dict):
                 yield norm_text
 
 
-class ORCIDGrounder(Grounder):
-    """A custom grounder for ORCID."""
+class ExtendedMatcher(ssslm.GildaGrounder):
+    """A matcher that had an alternate text generator function."""
 
-    def _build_prefix_index(self):
-        pass  # override building this to save 60 seconds on startup
-
-    def ground(self, raw_str, context=None, organisms=None, namespaces=None) -> list[ScoredMatch]:
+    def get_matches(self, text, **kwargs: Any) -> list[ssslm.Match]:
         """Ground a string to a researcher, also trying synonym generation during lookup."""
-        if rv := super().ground(
-            raw_str, context=context, organisms=organisms, namespaces=namespaces
-        ):
-            return rv
-        for x in name_to_synonyms(raw_str):
-            if rv := super().ground(x, context=context, organisms=organisms, namespaces=namespaces):
-                return rv
+        if matches := super().get_matches(text, **kwargs):
+            return matches
+        for synonym in name_to_synonyms(text):
+            if matches := super().get_matches(synonym, **kwargs):
+                return matches
         return []
 
 
-def write_lexical(*, version_info: VersionInfo | None = None) -> None:
+def write_lexical_sqlite(*, version_info: VersionInfo | None = None) -> None:
     """Build a SQLite database file from a set of grounding entries."""
     path = _get_output_module(version_info).join(name="orcid-gilda.db")
 
@@ -104,9 +116,9 @@ def write_lexical(*, version_info: VersionInfo | None = None) -> None:
 
         rows = (
             (term.norm_text, json.dumps(term.to_json()))
-            for record in iter_records(desc="Writing Gilda SQLite index", version_info=version_info)
+            for record in iter_records(desc="Writing SQLite index", version_info=version_info)
             if record.name
-            for term in _record_to_gilda_terms(record)
+            for term in _record_to_literal_mappings(record)
         )
         for x in batched(rows, 1_000_000):
             df = pd.DataFrame(x, columns=["norm_text", "term"])
@@ -120,52 +132,42 @@ def write_lexical(*, version_info: VersionInfo | None = None) -> None:
             cur.execute(q)
 
 
-def write_gilda(*, version_info: VersionInfo | None = None) -> None:
-    """Write Gilda indexes."""
+def write_lexical(*, version_info: VersionInfo | None = None) -> None:
+    """Write SSSLM."""
     module = _get_output_module(version_info)
-    gilda_lq_path = module.join(name="gilda.tsv.gz")
-    gilda_hq_path = module.join(name="gilda_hq.tsv.gz")
+    lq_path = module.join(name="orcid.lq.ssslm.tsv.gz")
+    hq_path = module.join(name="orcid.ssslm.tsv.gz")
 
-    tqdm.write("indexing for gilda")
-    with (
-        gzip.open(gilda_lq_path, "wt") as gilda_file,
-        gzip.open(gilda_hq_path, "wt") as gilda_hq_file,
-    ):
-        writer = csv.writer(gilda_file, delimiter="\t")
-        hq_writer = csv.writer(gilda_hq_file, delimiter="\t")
-        writer.writerow(TERMS_HEADER)
-        hq_writer.writerow(TERMS_HEADER)
-
-        # we don't need to filter duplicates globally
-        for record in iter_records(desc="Writing Gilda TSV index", version_info=version_info):
+    tqdm.write("writing for SSSLM")
+    with safe_open_writer(lq_path) as lq_writer, safe_open_writer(hq_path) as hq_writer:
+        lq_writer.writerow(LiteralMappingTuple._fields)
+        hq_writer.writerow(LiteralMappingTuple._fields)
+        for record in iter_records(desc="Writing SSSLM", version_info=version_info):
             if not record.name:
                 continue
             is_hq = record.is_high_quality()
-            for term in _record_to_gilda_terms(record):
-                row = term.to_list()
-                writer.writerow(row)
+            for literal_mapping in _record_to_literal_mappings(record):
+                row = literal_mapping._as_row()
+                lq_writer.writerow(row)
                 if is_hq:
                     hq_writer.writerow(row)
-    tqdm.write("done indexing for gilda")
+    tqdm.write("done writing SSSLM")
 
 
-def _record_to_gilda_terms(record: Record) -> Iterable[gilda.Term]:
-    from gilda import Term
-    from gilda.process import normalize
-
+def _record_to_literal_mappings(record: Record) -> Iterable[LiteralMapping]:
     name = record.name
     if not name:
         return
-    norm_name = normalize(name).strip()
-    if not norm_name:
-        return
-    yield Term(
-        norm_text=norm_name,
+
+    reference = NamedReference(
+        prefix="orcid",
+        identifier=record.orcid,
+        name=name,
+    )
+    yield LiteralMapping(
+        reference=reference,
         text=name,
-        db="orcid",
-        id=record.orcid,
-        entry_name=name,
-        status="name",
+        predicate=has_label,
         source="orcid",
     )
     aliases: set[str] = set()
@@ -177,23 +179,18 @@ def _record_to_gilda_terms(record: Record) -> Iterable[gilda.Term]:
     for alias in sorted(aliases):
         if not alias:
             continue
-        norm_alias = normalize(alias).strip()
-        if norm_alias:
-            yield Term(
-                norm_text=norm_alias,
-                text=alias,
-                db="orcid",
-                id=record.orcid,
-                entry_name=name,
-                status="synonym",
-                source="orcid",
-            )
+        yield LiteralMapping(
+            reference=reference,
+            predicate=exact_match,
+            text=alias,
+            source="orcid",
+        )
 
 
 if __name__ == "__main__":
     grounder = get_orcid_grounder()
-    print(grounder.ground_best("Joel A Gordon"))  # noqa:T201
-    print(grounder.ground_best("Joel A. Gordon"))  # noqa:T201
-    print(grounder.ground_best("J A Gordon"))  # noqa:T201
-    print(grounder.ground_best("J. A. Gordon"))  # noqa:T201
-    print(grounder.ground_best("J.A. Gordon"))  # noqa:T201
+    print(grounder.get_best_match("Joel A Gordon"))  # noqa:T201
+    print(grounder.get_best_match("Joel A. Gordon"))  # noqa:T201
+    print(grounder.get_best_match("J A Gordon"))  # noqa:T201
+    print(grounder.get_best_match("J. A. Gordon"))  # noqa:T201
+    print(grounder.get_best_match("J.A. Gordon"))  # noqa:T201

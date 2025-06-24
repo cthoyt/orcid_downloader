@@ -151,6 +151,7 @@ def reconcile_aliases(
     *,
     minimum_name_length: int = 1,
 ) -> tuple[str | None, set[str]]:
+    """Reconcile aliases."""
     # TODO if there is a comma in the main name picked, try and find an alias with no commas
     aliases = {a for a in aliases if len(a) > minimum_name_length}
     if name is not None and len(name) <= minimum_name_length:

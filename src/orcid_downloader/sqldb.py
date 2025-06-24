@@ -49,7 +49,7 @@ def write_sqlite(
 ) -> None:
     """Write a SQLite database."""
     import pandas as pd
-    from pyobo.sources.geonames import get_code_to_country
+    from pyobo.sources.geonames.geonames import get_code_to_country
     from pyobo.sources.ror import get_latest
 
     _, _, records = get_latest()

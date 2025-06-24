@@ -13,24 +13,22 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 import bioregistry
-import click
 import pystow
+import ssslm
 from curies import NamedReference
 from lxml import etree
 from pydantic import BaseModel, Field
 from pydantic_extra_types.country import CountryAlpha2, _index_by_alpha2
+from pystow.utils import safe_open_writer
 from semantic_pydantic import SemanticField
 from tqdm.auto import tqdm
 
 from orcid_downloader.name_utils import clean_name, reconcile_aliases
-from orcid_downloader.standardize import standardize_role
-
-if TYPE_CHECKING:
-    import gilda
+from orcid_downloader.standardize import standardize_role, write_role_counters
 
 __all__ = [
     "Record",
@@ -60,10 +58,12 @@ class VersionInfo:
 
     @property
     def raw_module(self) -> pystow.Module:
+        """Get the raw module."""
         return pystow.module("orcid", self.version)
 
     @property
     def output_module(self) -> pystow.Module:
+        """Get the output module."""
         return self.raw_module.module(self.output_directory_name)
 
 
@@ -407,8 +407,11 @@ def iter_records(
         from orcid_downloader.ror import get_ror_grounder
         from orcid_downloader.wikidata import get_orcid_to_commons_image, get_orcid_to_wikidata
 
+        tqdm.write("getting ROR grounder")
         ror_grounder = get_ror_grounder()
+        tqdm.write("getting ORCID to Wikidata mapping")
         orcid_to_wikidata = get_orcid_to_wikidata()
+        tqdm.write("getting ORCID to Wikimedia commons")
         orcid_to_wikimedia_commons = get_orcid_to_commons_image()
         f = partial(
             _process_file,
@@ -427,8 +430,6 @@ def iter_records(
             total = head
         else:
             total = version_info.size
-
-        from orcid_downloader.standardize import write_role_counters
 
         with (
             gzip.open(records_path, "wt") as records_file,
@@ -473,7 +474,7 @@ def get_records(
 
 def _process_file(  # noqa:C901
     file,
-    ror_grounder: gilda.Grounder,
+    ror_grounder: ssslm.Grounder,
     orcid_to_wikidata: dict[str, str],
     orcid_to_wikimedia_commons: dict[str, str],
 ) -> Record | None:
@@ -540,15 +541,15 @@ def _process_file(  # noqa:C901
     if aliases:
         record["aliases"] = sorted(aliases)
 
-    employments = _get_employments(tree, grounder=ror_grounder)
+    employments = _get_employments(tree, affiliation_grounder=ror_grounder)
     if employments:
         record["employments"] = employments
 
-    educations = _get_educations(tree, grounder=ror_grounder)
+    educations = _get_educations(tree, aggiliation_grounder=ror_grounder)
     if educations:
         record["educations"] = educations
 
-    memberships = _get_memberships(tree, grounder=ror_grounder)
+    memberships = _get_memberships(tree, affiliation_grounder=ror_grounder)
     if memberships:
         record["memberships"] = memberships
 
@@ -576,7 +577,7 @@ def _process_file(  # noqa:C901
     if locale := _get_locale(tree, orcid=orcid):
         record["locale"] = locale
 
-    return Record.parse_obj(record)
+    return Record.model_validate(record)
 
 
 def _iter_other_names(t) -> Iterable[str]:
@@ -846,26 +847,26 @@ def _standardize_pubmed(pubmed: str) -> str | None:
     return None
 
 
-def _get_employments(tree, grounder: gilda.Grounder):
+def _get_employments(tree, affiliation_grounder: ssslm.Grounder):
     elements = tree.findall(".//employment:employment-summary", namespaces=NAMESPACES)
-    return _get_affiliations(elements, grounder)
+    return _get_affiliations(elements, affiliation_grounder)
 
 
-def _get_educations(tree, grounder: gilda.Grounder):
+def _get_educations(tree, aggiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
     elements = tree.findall(
         ".//activities:educations//education:education-summary", namespaces=NAMESPACES
     )
-    return _get_affiliations(elements, grounder)
+    return _get_affiliations(elements, aggiliation_grounder)
 
 
-def _get_memberships(tree, grounder: gilda.Grounder):
+def _get_memberships(tree, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
     elements = tree.findall(
         ".//activities:memberships//membership:membership-summary", namespaces=NAMESPACES
     )
-    return _get_affiliations(elements, grounder)
+    return _get_affiliations(elements, affiliation_grounder)
 
 
-def _get_affiliations(elements, grounder: gilda.Grounder):
+def _get_affiliations(elements, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
     results = []
     for element in elements:
         if element is None:
@@ -877,7 +878,9 @@ def _get_affiliations(elements, grounder: gilda.Grounder):
         name = organization_element.findtext(".//common:name", namespaces=NAMESPACES)
         if not name:
             continue
-        references = _get_disambiguated_organization(organization_element, name, grounder)
+        references = _get_disambiguated_organization(
+            organization_element, name, affiliation_grounder
+        )
         record = {"name": name.strip(), "xrefs": references}
 
         if (start_date := element.find(".//common:start-date", namespaces=NAMESPACES)) is not None:
@@ -888,7 +891,7 @@ def _get_affiliations(elements, grounder: gilda.Grounder):
         if role := _get_role(element):
             record["role"] = role
 
-        results.append(record)
+        results.append(Affiliation.model_validate(record))
     return results
 
 
@@ -901,7 +904,9 @@ def _get_date(date_element) -> Date | None:
     return Date(year=year, month=month, day=day)
 
 
-def _get_disambiguated_organization(organization_element, name, grounder) -> dict[str, str]:
+def _get_disambiguated_organization(
+    organization_element, name, grounder: ssslm.Grounder
+) -> dict[str, str]:
     references = {}
     for de in organization_element.findall(
         ".//common:disambiguated-organization", namespaces=NAMESPACES
@@ -920,8 +925,8 @@ def _get_disambiguated_organization(organization_element, name, grounder) -> dic
         elif source not in UNKNOWN_SOURCES:
             tqdm.write(f"unhandled source: {source} / link: {link}")
             UNKNOWN_SOURCES[source] = link
-    if "ror" not in references and (scored_match := grounder.ground_best(name)):
-        references["ror"] = scored_match.term.id
+    if "ror" not in references and (match := grounder.get_best_match(name)):
+        references["ror"] = match.identifier
     return references
 
 
@@ -941,13 +946,11 @@ def _get_role(element) -> NamedReference | str | None:
     return label
 
 
-def ground_researcher(
-    name: str, *, version_info: VersionInfo | None = None
-) -> list[gilda.ScoredMatch]:
+def ground_researcher(name: str, *, version_info: VersionInfo | None = None) -> list[ssslm.Match]:
     """Ground a name based on ORCID names/aliases."""
     from .lexical import get_orcid_grounder
 
-    return get_orcid_grounder(version_info=version_info).ground(name)
+    return get_orcid_grounder(version_info=version_info).get_matches(name)
 
 
 def ground_researcher_unambiguous(name: str) -> str | None:
@@ -987,19 +990,15 @@ def write_summaries(*, version_info: VersionInfo | None = None, force: bool = Fa
 
     xrefs_folder = module.module("xrefs")
     with (
-        xrefs_folder.join(name="github.tsv").open("w") as githubs_file,
-        module.join(name="email.tsv").open("w") as emails_file,
-        gzip.open(module.join(name="pubmeds.tsv.gz"), "wt") as pubmeds_file,
-        gzip.open(xrefs_folder.join(name="sssom.tsv.gz"), "wt") as sssom_file,
+        safe_open_writer(xrefs_folder.join(name="github.tsv")) as githubs_writer,
+        safe_open_writer(module.join(name="email.tsv")) as emails_writer,
+        safe_open_writer(module.join(name="pubmeds.tsv.gz")) as pubmeds_writer,
+        safe_open_writer(xrefs_folder.join(name="sssom.tsv.gz")) as sssom_writer,
     ):
-        emails_writer = csv.writer(emails_file, delimiter="\t")
         emails_writer.writerow(("orcid", "email"))
-        githubs_writer = csv.writer(githubs_file, delimiter="\t")
         githubs_writer.writerow(("orcid", "github"))
-        pubmeds_writer = csv.writer(pubmeds_file, delimiter="\t")
         pubmeds_writer.writerow(("orcid", "pubmed"))
         # TODO write out bioregistry prefixes in sssom_file
-        sssom_writer = csv.writer(sssom_file, delimiter="\t")
         sssom_writer.writerow(
             ("subject_id", "subject_label", "predicate_id", "object_id", "mapping_justification")
         )
@@ -1068,7 +1067,7 @@ def write_summaries(*, version_info: VersionInfo | None = None, force: bool = Fa
         f"""\
 # Cross References Summary
 
-{tabulate(xrefs_counter.most_common(), tablefmt='github', headers=['prefix', 'count'])}
+{tabulate(xrefs_counter.most_common(), tablefmt="github", headers=["prefix", "count"])}
     """.rstrip()
     )
 
@@ -1108,60 +1107,13 @@ def write_counter(file, header, counter, examples=None) -> None:
 
 
 def _process_example() -> Record | None:
-    import gilda
-
     from orcid_downloader.wikidata import get_orcid_to_commons_image, get_orcid_to_wikidata
 
     here = Path(__file__).parent.parent.parent.resolve()
     example_path = here.joinpath("example.xml")
-    grounder = gilda.Grounder([])
+    grounder = ssslm.make_grounder([])
     orcid_to_wikimedia_commons = get_orcid_to_commons_image()
     orcid_to_wikidata = get_orcid_to_wikidata()
     with example_path.open() as file:
         res = _process_file(file, grounder, orcid_to_wikidata, orcid_to_wikimedia_commons)
     return res
-
-
-@click.command()
-@click.option("--test", is_flag=True)
-def main(test: bool) -> None:
-    """Process ORCID."""
-    if test:
-        version_info = VersionInfo(
-            version=VERSION_DEFAULT.version,
-            url=VERSION_DEFAULT.url,
-            fname=VERSION_DEFAULT.fname,
-            size=VERSION_DEFAULT.size,
-            output_directory_name="output-test",
-        )
-        list(iter_records(force=True, version_info=version_info, head=10_000))
-    else:
-        version_info = VERSION_DEFAULT
-
-    from .lexical import write_gilda, write_lexical
-    from .owl import write_owl_rdf
-    from .sqldb import write_sqlite
-
-    schema_path = _get_output_module(version_info).join(name="schema.json")
-    write_schema(schema_path)
-
-    write_summaries(version_info=version_info, force=not test)
-
-    tqdm.write("Writing SQLite")
-    write_sqlite(version_info=version_info)
-
-    tqdm.write("Writing OWL")
-    write_owl_rdf(version_info=version_info)
-
-    tqdm.write("Generating Gilda TSV (~30 min)")
-    write_gilda(version_info=version_info)
-
-    tqdm.write("Generating Gilda SQLite (~30 min)")
-    write_lexical(version_info=version_info)
-
-    # Test grounding
-    print(*ground_researcher("CT Hoyt", version_info=version_info), sep="\n")  # noqa:T201
-
-
-if __name__ == "__main__":
-    main()

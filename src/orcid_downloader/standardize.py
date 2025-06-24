@@ -193,7 +193,10 @@ for k in REVERSE_REPLACEMENTS:
 
 REPLACEMENTS = {_norm(value): k for k, values in REVERSE_REPLACEMENTS.items() for value in values}
 
+#: contains all roles
 ROLE_COUNTER_1: Counter[str] = Counter()
+
+#: contains roles that should be immediately curated as part of qualo
 ROLE_COUNTER_2: Counter[str] = Counter()
 
 
@@ -251,6 +254,7 @@ def standardize_role(role: str) -> tuple[str, bool, NamedReference | None]:  # n
 
 
 def write_role_counters() -> None:
+    """Write summaries over all roles,a nd the highest."""
     write_counter(ROLE_COUNTER_1, pystow.join("orcid", name="roles_all.tsv"))
     write_counter(ROLE_COUNTER_2, pystow.join("orcid", name="roles_curate_first.tsv"))
 
@@ -261,6 +265,7 @@ def write_counter(
     sep: str | None = None,
     header=None,
 ) -> None:
+    """Write a counter."""
     path = Path(path).expanduser().resolve()
     tqdm.write(f"Writing to {path}")
     if sep is None:

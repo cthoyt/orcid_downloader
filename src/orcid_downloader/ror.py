@@ -5,7 +5,8 @@ from __future__ import annotations
 from functools import lru_cache
 
 import gilda
-import pyobo.gilda_utils
+import pyobo
+import ssslm
 
 __all__ = [
     "RORGrounder",
@@ -18,21 +19,21 @@ class RORGrounder(gilda.Grounder):
 
     def ground(
         self,
-        raw_str,
+        text: str,
         context: str | None = None,
         organisms: list[str] | None = None,
         namespaces: list[str] | None = None,
     ):
         """Ground an organization, and fallback with optional preprocessing."""
         if scored_matches := super().ground(
-            raw_str,
+            text,
             context=context,
             organisms=organisms,
             namespaces=namespaces,
         ):
             return scored_matches
 
-        norm_str = raw_str.removeprefix("The ").replace(",", "")
+        norm_str = text.removeprefix("The ").replace(",", "")
         return super().ground(
             norm_str,
             context=context,
@@ -42,6 +43,6 @@ class RORGrounder(gilda.Grounder):
 
 
 @lru_cache(1)
-def get_ror_grounder() -> gilda.Grounder:
+def get_ror_grounder() -> ssslm.Grounder:
     """Get a grounder for ROR."""
-    return pyobo.gilda_utils.get_grounder("ror", grounder_cls=RORGrounder, progress=False)
+    return pyobo.get_grounder("ror", grounder_cls=RORGrounder, progress=False)

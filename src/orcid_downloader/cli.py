@@ -62,7 +62,7 @@ def main(test: bool) -> None:
     x = time.time()
     res = ground_researcher("CT Hoyt", version_info=version_info)
     delta = time.time() - x
-    click.echo(f"Grounded in {delta:.2f} seconds:\n\n{repr(res)}")
+    click.echo(f"Grounded in {delta:.2f} seconds:\n\n{res!r}")
 
 
 if __name__ == "__main__":

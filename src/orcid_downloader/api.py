@@ -499,7 +499,7 @@ def _process_file(  # noqa:C901
                 )
             )
     """
-    tree = etree.parse(file)  # noqa:S320
+    tree = etree.parse(file)
 
     orcid = tree.findtext(".//common:path", namespaces=NAMESPACES)
     if not orcid:

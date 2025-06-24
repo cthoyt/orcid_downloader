@@ -1,5 +1,7 @@
 """A command line interface for orcid-downloader."""
 
+import time
+
 import click
 
 from orcid_downloader.api import (
@@ -57,7 +59,10 @@ def main(test: bool) -> None:
     write_lexical_sqlite(version_info=version_info, force=False)
 
     # Test grounding
-    print(*ground_researcher("CT Hoyt", version_info=version_info), sep="\n")  # noqa:T201
+    x = time.time()
+    res = ground_researcher("CT Hoyt", version_info=version_info)
+    delta = time.time() - x
+    click.echo(f"Grounded in {delta:.2f} seconds:\n\n{repr(res)}")
 
 
 if __name__ == "__main__":

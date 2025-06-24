@@ -103,6 +103,8 @@ class ExtendedMatcher(ssslm.GildaGrounder):
 
 def write_lexical_sqlite(*, version_info: VersionInfo | None = None, force: bool = False) -> None:
     """Build a SQLite database file from a set of grounding entries."""
+    from gilda.process import normalize
+
     path = _get_output_module(version_info).join(name="orcid-gilda.db")
 
     if path.is_file():
@@ -114,12 +116,14 @@ def write_lexical_sqlite(*, version_info: VersionInfo | None = None, force: bool
             cur.execute(q)
 
         rows = (
-            ((term := literal_mapping.to_gilda()).norm_text, json.dumps(term.to_json()))
+            (term.norm_text, json.dumps(term.to_json()))
             for record in iter_records(
                 desc="Writing SQLite index", version_info=version_info, force=force
             )
             if record.name
             for literal_mapping in _record_to_literal_mappings(record)
+            # TODO upstream this so no term gets constructed if it doesn't have text
+            if normalize(literal_mapping.text).strip() and (term := literal_mapping.to_gilda())
         )
         for x in batched(rows, 1_000_000):
             df = pd.DataFrame(x, columns=["norm_text", "term"])
@@ -156,8 +160,10 @@ def write_lexical(*, version_info: VersionInfo | None = None, force: bool = Fals
 
 
 def _record_to_literal_mappings(record: Record) -> Iterable[LiteralMapping]:
+    from gilda.process import normalize
+
     name = record.name
-    if not name:
+    if not name or not normalize(name).strip():
         return
 
     reference = NamedReference(
@@ -174,6 +180,8 @@ def _record_to_literal_mappings(record: Record) -> Iterable[LiteralMapping]:
     aliases: set[str] = set()
     aliases.update(name_to_synonyms(name))
     for alias in record.aliases:
+        if not normalize(alias).strip():
+            continue
         aliases.add(alias)
         aliases.update(name_to_synonyms(alias))
     aliases -= {name}

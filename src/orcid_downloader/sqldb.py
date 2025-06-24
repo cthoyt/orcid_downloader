@@ -2,6 +2,7 @@
 
 import sqlite3
 from contextlib import closing
+from pathlib import Path
 
 import bioregistry
 from pydantic import BaseModel
@@ -9,7 +10,7 @@ from pydantic_extra_types.country import CountryAlpha2
 from semantic_pydantic import SemanticField
 from tqdm import tqdm
 
-from orcid_downloader.api import MODULE, iter_records
+from orcid_downloader.api import VersionInfo, _get_output_module, iter_records
 
 __all__ = [
     "Metadata",
@@ -18,8 +19,6 @@ __all__ = [
     "write_sqlite",
 ]
 
-
-PATH = MODULE.join(name="orcid.db")
 COLUMNS = [
     "orcid",
     "name",
@@ -42,14 +41,16 @@ COLUMNS = [
 
 
 def write_sqlite(
+    *,
+    version_info: VersionInfo | None = None,
     researcher_table_name: str = "person",
     organization_table_name="organization",
-    *,
     name_index: bool = False,
+    force: bool = False,
 ) -> None:
     """Write a SQLite database."""
     import pandas as pd
-    from pyobo.sources.geonames import get_code_to_country
+    from pyobo.sources.geonames.geonames import get_code_to_country
     from pyobo.sources.ror import get_latest
 
     _, _, records = get_latest()
@@ -86,12 +87,14 @@ def write_sqlite(
                 record.commons_image,
                 len(record.works),
             )
-            for record in iter_records(desc="Writing SQL database")
+            for record in iter_records(
+                desc="Writing SQL database", version_info=version_info, force=force
+            )
             if record.name
         ),
         columns=COLUMNS,
     )
-    with sqlite3.connect(PATH) as conn:
+    with sqlite3.connect(_get_orcid_db_path(version_info)) as conn:
         with closing(conn.cursor()) as cursor:
             cursor.execute(f"DROP TABLE IF EXISTS {organization_table_name};")
             cursor.execute(f"DROP TABLE IF EXISTS {researcher_table_name};")
@@ -167,9 +170,10 @@ class Metadata(BaseModel):
     commons_image: str | None = None
 
 
-def get_metadata(orcid: str) -> Metadata | None:
+def get_metadata(orcid: str, *, version_info: VersionInfo | None = None) -> Metadata | None:
     """Get metadata for a given ORCID."""
-    with sqlite3.connect(PATH) as conn:
+    path = _get_orcid_db_path(version_info=version_info)
+    with sqlite3.connect(path) as conn:
         res = conn.execute(
             """\
                 SELECT orcid, person.name, person.country, person.locale, person.ror,
@@ -232,8 +236,13 @@ def get_metadata(orcid: str) -> Metadata | None:
     )
 
 
-def get_example_missing_wikidata() -> str | None:
+def _get_orcid_db_path(version_info: VersionInfo | None = None) -> Path:
+    return _get_output_module(version_info).join(name="orcid.db")
+
+
+def get_example_missing_wikidata(version_info: VersionInfo | None = None) -> str | None:
     """Get an example that has a current organization but no Wikidata."""
+    path = _get_orcid_db_path(version_info)
     sql = """\
         SELECT orcid
         FROM person
@@ -242,7 +251,7 @@ def get_example_missing_wikidata() -> str | None:
     """
     # there were 4,720 from the 2023 data when I started working
     # on this that had ROR + GitHub - Wikidata
-    with sqlite3.connect(PATH) as conn:
+    with sqlite3.connect(path) as conn:
         res = conn.execute(sql)
         row = res.fetchone()
         if row is None:

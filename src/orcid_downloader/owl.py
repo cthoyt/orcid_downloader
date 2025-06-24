@@ -5,13 +5,11 @@ import gzip
 import pyobo
 from tqdm import tqdm
 
-from orcid_downloader.api import MODULE, iter_records
+from orcid_downloader.api import VersionInfo, _get_output_module, iter_records
 
 __all__ = [
     "write_owl_rdf",
 ]
-
-PATH = MODULE.join(name="orcid.ttl.gz")
 
 PREAMBLE = """\
 @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -77,16 +75,19 @@ db: a owl:AnnotationProperty;
 """
 
 
-def write_owl_rdf() -> None:  # noqa:C901
+def write_owl_rdf(*, version_info: VersionInfo | None = None, force: bool = False) -> None:  # noqa:C901
     """Write OWL RDF in a gzipped file."""
-    tqdm.write(f"Writing OWL RDF to {PATH}")
+    module = _get_output_module(version_info)
+    path = module.join(name="orcid.ttl.gz")
+
+    tqdm.write(f"Writing OWL RDF to {path}")
 
     ror_id_to_name = {k: v.replace('"', '\\"') for k, v in pyobo.get_id_name_mapping("ror").items()}
     ror_written = set()
 
-    with gzip.open(PATH, "wt") as file:
+    with gzip.open(path, "wt") as file:
         file.write(PREAMBLE + "\n")
-        for record in iter_records(desc="Writing OWL RDF"):
+        for record in iter_records(desc="Writing OWL RDF", version_info=version_info, force=force):
             if not record.name:
                 continue
             ror_parts = []

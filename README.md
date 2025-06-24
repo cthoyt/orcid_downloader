@@ -40,7 +40,7 @@ import orcid_downloader
 # Takes 10-15 minutes to download
 path = orcid_downloader.ensure_summaries()
 
-# Takes a bit more than an hour to parse after downloading was done
+# Takes ~2 hours to parse after downloading was done
 records = orcid_downloader.get_records()
 ```
 
@@ -51,7 +51,7 @@ Grounding can be done on the name field, aliases, and credit name field:
 
 ```python
 >>> orcid_downloader.ground_researcher("Charles Hoyt")
-[ScoredMatch(Term(charles hoyt,Charles Hoyt,orcid,0000-0003-4423-4370,Charles Tapley Hoyt,synonym,orcid,None,None,None),0.5555555555555556,Match(query=Charles Hoyt,ref=Charles Hoyt,exact=True,space_mismatch=False,dash_mismatches={},cap_combos=[]))]
+[Match(reference=NamedReference(prefix='orcid', identifier='0000-0003-4423-4370', name='Charles Tapley Hoyt'), score=0.5555555555555556)]
 ```
 
 > **Note**

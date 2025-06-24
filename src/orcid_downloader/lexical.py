@@ -101,7 +101,7 @@ class ExtendedMatcher(ssslm.GildaGrounder):
         return []
 
 
-def write_lexical_sqlite(*, version_info: VersionInfo | None = None) -> None:
+def write_lexical_sqlite(*, version_info: VersionInfo | None = None, force: bool = False) -> None:
     """Build a SQLite database file from a set of grounding entries."""
     path = _get_output_module(version_info).join(name="orcid-gilda.db")
 
@@ -114,10 +114,12 @@ def write_lexical_sqlite(*, version_info: VersionInfo | None = None) -> None:
             cur.execute(q)
 
         rows = (
-            (term.norm_text, json.dumps(term.to_json()))
-            for record in iter_records(desc="Writing SQLite index", version_info=version_info)
+            ((term := literal_mapping.to_gilda()).norm_text, json.dumps(term.to_json()))
+            for record in iter_records(
+                desc="Writing SQLite index", version_info=version_info, force=force
+            )
             if record.name
-            for term in _record_to_literal_mappings(record)
+            for literal_mapping in _record_to_literal_mappings(record)
         )
         for x in batched(rows, 1_000_000):
             df = pd.DataFrame(x, columns=["norm_text", "term"])
@@ -131,7 +133,7 @@ def write_lexical_sqlite(*, version_info: VersionInfo | None = None) -> None:
             cur.execute(q)
 
 
-def write_lexical(*, version_info: VersionInfo | None = None) -> None:
+def write_lexical(*, version_info: VersionInfo | None = None, force: bool = False) -> None:
     """Write SSSLM."""
     module = _get_output_module(version_info)
     lq_path = module.join(name="orcid.lq.ssslm.tsv.gz")
@@ -141,7 +143,7 @@ def write_lexical(*, version_info: VersionInfo | None = None) -> None:
     with safe_open_writer(lq_path) as lq_writer, safe_open_writer(hq_path) as hq_writer:
         lq_writer.writerow(LiteralMappingTuple._fields)
         hq_writer.writerow(LiteralMappingTuple._fields)
-        for record in iter_records(desc="Writing SSSLM", version_info=version_info):
+        for record in iter_records(desc="Writing SSSLM", version_info=version_info, force=force):
             if not record.name:
                 continue
             is_hq = record.is_high_quality()

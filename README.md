@@ -40,7 +40,7 @@ import orcid_downloader
 # Takes 10-15 minutes to download
 path = orcid_downloader.ensure_summaries()
 
-# Takes a bit more than an hour to parse after downloading was done
+# Takes ~2 hours to parse after downloading was done
 records = orcid_downloader.get_records()
 ```
 

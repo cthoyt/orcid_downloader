@@ -46,6 +46,7 @@ def write_sqlite(
     researcher_table_name: str = "person",
     organization_table_name="organization",
     name_index: bool = False,
+    force: bool = False,
 ) -> None:
     """Write a SQLite database."""
     import pandas as pd
@@ -86,7 +87,9 @@ def write_sqlite(
                 record.commons_image,
                 len(record.works),
             )
-            for record in iter_records(desc="Writing SQL database", version_info=version_info)
+            for record in iter_records(
+                desc="Writing SQL database", version_info=version_info, force=force
+            )
             if record.name
         ),
         columns=COLUMNS,

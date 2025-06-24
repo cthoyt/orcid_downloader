@@ -45,16 +45,16 @@ def main(test: bool) -> None:
     write_summaries(version_info=version_info, force=not test)
 
     click.echo("Writing SQLite")
-    write_sqlite(version_info=version_info)
+    write_sqlite(version_info=version_info, force=False)
 
     click.echo("Writing OWL")
-    write_owl_rdf(version_info=version_info)
+    write_owl_rdf(version_info=version_info, force=False)
 
     click.echo("Generating SSSLM TSV (~30 min)")
-    write_lexical(version_info=version_info)
+    write_lexical(version_info=version_info, force=False)
 
     click.echo("Generating SQLite lexical index (~30 min)")
-    write_lexical_sqlite(version_info=version_info)
+    write_lexical_sqlite(version_info=version_info, force=False)
 
     # Test grounding
     print(*ground_researcher("CT Hoyt", version_info=version_info), sep="\n")  # noqa:T201

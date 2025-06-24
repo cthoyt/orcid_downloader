@@ -75,7 +75,7 @@ db: a owl:AnnotationProperty;
 """
 
 
-def write_owl_rdf(*, version_info: VersionInfo | None = None) -> None:  # noqa:C901
+def write_owl_rdf(*, version_info: VersionInfo | None = None, force: bool = False) -> None:  # noqa:C901
     """Write OWL RDF in a gzipped file."""
     module = _get_output_module(version_info)
     path = module.join(name="orcid.ttl.gz")
@@ -87,7 +87,7 @@ def write_owl_rdf(*, version_info: VersionInfo | None = None) -> None:  # noqa:C
 
     with gzip.open(path, "wt") as file:
         file.write(PREAMBLE + "\n")
-        for record in iter_records(desc="Writing OWL RDF", version_info=version_info):
+        for record in iter_records(desc="Writing OWL RDF", version_info=version_info, force=force):
             if not record.name:
                 continue
             ror_parts = []

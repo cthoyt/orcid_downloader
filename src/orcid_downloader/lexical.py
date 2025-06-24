@@ -18,6 +18,7 @@ from curies import NamedReference
 from curies.vocabulary import exact_match, has_label
 from gilda.resources.sqlite_adapter import SqliteEntries
 from pystow.utils import safe_open_writer
+from ssslm import LiteralMapping, LiteralMappingTuple
 from tqdm import tqdm
 
 from orcid_downloader.api import Record, VersionInfo, _get_output_module, iter_records
@@ -28,8 +29,6 @@ __all__ = [
     "write_lexical",
     "write_lexical_sqlite",
 ]
-
-from ssslm import LiteralMapping, LiteralMappingTuple
 
 
 def get_orcid_grounder(version_info: VersionInfo | None = None) -> ssslm.Grounder:

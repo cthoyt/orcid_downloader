@@ -3,6 +3,7 @@
 import sqlite3
 from contextlib import closing
 from pathlib import Path
+from typing import Literal, overload
 
 import bioregistry
 from pydantic import BaseModel
@@ -16,6 +17,7 @@ __all__ = [
     "Metadata",
     "Organization",
     "get_metadata",
+    "get_name",
     "write_sqlite",
 ]
 
@@ -257,6 +259,33 @@ def get_example_missing_wikidata(version_info: VersionInfo | None = None) -> str
         if row is None:
             return None  # though not likely
         return row[0]
+
+
+# docstr-coverage:excused `overload`
+@overload
+def get_name(
+    orcid: str, *, strict: Literal[True] = True, version_info: VersionInfo | None = ...
+) -> str: ...
+
+
+# docstr-coverage:excused `overload`
+@overload
+def get_name(
+    orcid: str, *, strict: Literal[False] = False, version_info: VersionInfo | None = ...
+) -> str | None: ...
+
+
+def get_name(
+    orcid: str, *, strict: bool = False, version_info: VersionInfo | None = None
+) -> str | None:
+    """Get the name from ORCID."""
+    metadata = get_metadata(orcid, version_info=version_info)
+    if metadata:
+        return metadata.name
+    elif strict:
+        raise ValueError
+    else:
+        return None
 
 
 if __name__ == "__main__":

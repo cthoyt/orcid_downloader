@@ -48,8 +48,7 @@ dependencies = [
     "lxml",
     "pystow",
     "pydantic",
-    "pydantic_extra_types",
-    "pycountry",
+    "pydantic_extra_types[pycountry]",
     "semantic_pydantic",
     "bioregistry>=0.11.13",
     "qualo>=0.0.2",
@@ -63,6 +62,7 @@ tests = [
 process = [
     "pyobo",
     "ssslm[gilda-slim]",
+    "gilda-slim>=1.4.1.1",
     "tabulate",
 ]
 autocomplete = [

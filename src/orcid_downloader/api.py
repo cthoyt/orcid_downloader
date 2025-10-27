@@ -958,7 +958,7 @@ def ground_researcher_unambiguous(name: str) -> str | None:
     matches = ground_researcher(name)
     if len(matches) != 1:
         return None
-    return matches[0].term.id
+    return matches[0].identifier
 
 
 def write_schema(path: Path) -> None:

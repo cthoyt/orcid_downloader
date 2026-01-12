@@ -1,5 +1,7 @@
 """Utilities for querying wikidata."""
 
+from __future__ import annotations
+
 import json
 
 import pystow

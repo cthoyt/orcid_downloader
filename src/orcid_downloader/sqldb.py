@@ -1,11 +1,14 @@
 """Write SQLite."""
 
+from __future__ import annotations
+
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from typing import Literal, overload, TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Literal, cast, overload
 
 import bioregistry
+import ssslm
 from pydantic import BaseModel
 from pydantic_extra_types.country import CountryAlpha2
 from semantic_pydantic import SemanticField
@@ -14,7 +17,7 @@ from tqdm import tqdm
 from orcid_downloader.api import VersionInfo, _get_output_module, iter_records
 
 if TYPE_CHECKING:
-    import pyobo.sources.ror
+    from pyobo.sources.ror import Record
 
 __all__ = [
     "Metadata",
@@ -52,11 +55,11 @@ def write_sqlite(
     organization_table_name="organization",
     name_index: bool = False,
     force: bool = False,
-    records: list[pyobo.sources.ror.Record]  | None=  None
+    ror_grounder: ssslm.Grounder | None,
+    records: list[Record] | None = None,
 ) -> None:
     """Write a SQLite database."""
     import pandas as pd
-    from pyobo.sources.geonames.geonames import get_code_to_country
 
     if records is None:
         from pyobo.sources.ror import get_latest
@@ -73,10 +76,10 @@ def write_sqlite(
             # two-letter country code
             country_code = location.geonames_details.country_code
             country_name = location.geonames_details.country_name
-            if country_name:
+            if country_code and country_name:
                 break
         ror_rows.append((identifier, name, country_code, country_name))
-    ror_df = pd.DataFrame(ror_rows, columns=["ror", "name", "country"])
+    ror_df = pd.DataFrame(ror_rows, columns=["ror", "name", "country", "country_name"])
     orcid_df = pd.DataFrame(
         (
             (
@@ -99,7 +102,10 @@ def write_sqlite(
                 len(record.works),
             )
             for record in iter_records(
-                desc="Writing SQL database", version_info=version_info, force=force
+                desc="Writing SQL database",
+                version_info=version_info,
+                force=force,
+                ror_grounder=ror_grounder,
             )
             if record.name
         ),
@@ -156,7 +162,7 @@ def write_sqlite(
 class Organization(BaseModel):
     """A model representing an organization."""
 
-    ror: str = SemanticField(..., prefix="ror")
+    ror: Annotated[str, SemanticField(..., prefix="ror")]
     name: str
     country: str
 
@@ -164,20 +170,20 @@ class Organization(BaseModel):
 class Metadata(BaseModel):
     """A model representing the metadata associated with a researcher."""
 
-    orcid: str = SemanticField(..., prefix="orcid")
+    orcid: Annotated[str, SemanticField(..., prefix="orcid")]
     name: str
     country: CountryAlpha2 | None = None
     locale: str | None = None
     organization: Organization | None = None
     email: str | None = None
     homepage: str | None = None
-    github: str | None = SemanticField(None, prefix="github")
-    wos: str | None = SemanticField(None, prefix="wos.researcher")
-    dblp: str | None = SemanticField(None, prefix="dblp.author")
-    scopus: str | None = SemanticField(None, prefix="scopus")
-    google: str | None = SemanticField(None, prefix="google.scholar")
+    github: Annotated[str | None, SemanticField(None, prefix="github")]
+    wos: Annotated[str | None, SemanticField(None, prefix="wos.researcher")]
+    dblp: Annotated[str | None, SemanticField(None, prefix="dblp.author")]
+    scopus: Annotated[str | None, SemanticField(None, prefix="scopus")]
+    google: Annotated[str | None, SemanticField(None, prefix="google.scholar")]
     linkedin: str | None = None
-    wikidata: str | None = SemanticField(None, prefix="wikidata")
+    wikidata: Annotated[str | None, SemanticField(None, prefix="wikidata")]
     mastodon: str | None = None
     commons_image: str | None = None
 
@@ -268,7 +274,7 @@ def get_example_missing_wikidata(version_info: VersionInfo | None = None) -> str
         row = res.fetchone()
         if row is None:
             return None  # though not likely
-        return row[0]
+        return cast(str, row[0])
 
 
 # docstr-coverage:excused `overload`

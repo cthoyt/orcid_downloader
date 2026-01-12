@@ -1,5 +1,7 @@
 """A command line interface for orcid-downloader."""
 
+from __future__ import annotations
+
 import time
 
 import click
@@ -20,9 +22,10 @@ __all__ = ["main"]
 @click.command()
 @click.option("--test", is_flag=True)
 @click.option("--ror-version")
-def main(test: bool, ror_version:str |None) -> None:
+def main(test: bool, ror_version: str | None) -> None:
     """Process ORCID."""
     from .ror import get_ror_grounder
+
     ror_grounder = get_ror_grounder(version=ror_version)
 
     if test:
@@ -33,7 +36,11 @@ def main(test: bool, ror_version:str |None) -> None:
             size=VERSION_DEFAULT.size,
             output_directory_name="output-test",
         )
-        list(iter_records(force=True, version_info=version_info, head=10_000, ror_grounder=ror_grounder))
+        list(
+            iter_records(
+                force=True, version_info=version_info, head=10_000, ror_grounder=ror_grounder
+            )
+        )
     else:
         version_info = VERSION_DEFAULT
 
@@ -51,10 +58,12 @@ def main(test: bool, ror_version:str |None) -> None:
     write_summaries(version_info=version_info, force=not test, ror_grounder=ror_grounder)
 
     click.echo("Writing SQLite")
-    write_sqlite(version_info=version_info, force=False)
+    write_sqlite(version_info=version_info, force=False, ror_grounder=ror_grounder)
 
     click.echo("Writing OWL")
-    write_owl_rdf(version_info=version_info, force=False, ror_version=ror_version)
+    write_owl_rdf(
+        version_info=version_info, force=False, ror_grounder=ror_grounder, ror_version=ror_version
+    )
 
     click.echo("Generating SSSLM TSV (~30 min)")
     write_lexical(version_info=version_info, force=False, ror_grounder=ror_grounder)

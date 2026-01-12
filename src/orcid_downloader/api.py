@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import gzip
+import io
 import json
 import logging
 import tarfile
@@ -127,7 +128,7 @@ def _get_output_module(version_info: VersionInfo | None = None) -> pystow.Module
     return version_info.output_module
 
 
-def _norm_key(id_type):
+def _norm_key(id_type: str) -> str:
     return id_type.lower().replace(" ", "").rstrip(":")
 
 
@@ -383,7 +384,7 @@ class Record(BaseModel):
         return None
 
 
-def _iter_tarfile_members(path: Path):
+def _iter_tarfile_members(path: Path) -> Iterable[io.BufferedReader]:
     tar_file = tarfile.open(path)
     while member := tar_file.next():
         if not member.name.endswith(".xml"):
@@ -496,7 +497,7 @@ def get_records(
 
 
 def _process_file(  # noqa:C901
-    file,
+    file: typing.TextIO,
     ror_grounder: ssslm.Grounder,
     orcid_to_wikidata: dict[str, str],
     orcid_to_wikimedia_commons: dict[str, str],
@@ -603,7 +604,7 @@ def _process_file(  # noqa:C901
     return Record.model_validate(record)
 
 
-def _iter_other_names(t) -> Iterable[str]:
+def _iter_other_names(t: Element) -> Iterable[str]:
     for part in t.findall(".//other-name:content", namespaces=NAMESPACES):
         if not part.text:
             continue
@@ -621,7 +622,7 @@ UNKNOWN_NAMES_EXAMPLES: dict[str, str] = {}
 UNKNOWN_NAMES_FULL: dict[str, str] = {}
 
 
-def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:  # noqa:C901
+def _get_external_identifiers(tree: Element, orcid: str) -> tuple[dict[str, str], str | None]:  # noqa:C901
     rv = {}
     homepage = None
     for element in tree.findall(
@@ -634,6 +635,8 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
         if not local_unique_identifier:
             continue
         id_type = element.findtext(".//common:external-id-type", namespaces=NAMESPACES)
+        if id_type is None:
+            continue
         id_type_norm = _norm_key(id_type)
         if id_type_norm in EXTERNAL_ID_SKIP:
             continue
@@ -657,8 +660,13 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
     for element in tree.findall(
         ".//researcher-url:researcher-urls/researcher-url:researcher-url", namespaces=NAMESPACES
     ):
+        url = element.findtext(".//researcher-url:url", namespaces=NAMESPACES)
+        if url is None:
+            continue
+
+        url = url.rstrip("/")
+
         name = element.findtext(".//researcher-url:url-name", namespaces=NAMESPACES)
-        url = element.findtext(".//researcher-url:url", namespaces=NAMESPACES).rstrip("/")
         if name and homepage is None and _norm_key(name) in PERSONAL_KEYS:
             homepage = url
             continue
@@ -752,14 +760,14 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
     return rv, homepage
 
 
-def _get_emails(tree) -> list[str]:
+def _get_emails(tree: Element) -> list[str]:
     return [
         email.text.strip()
         for email in tree.findall(".//email:emails/email:email/email:email", namespaces=NAMESPACES)
     ]
 
 
-def _get_keywords(tree) -> Iterable[str]:
+def _get_keywords(tree: Element) -> Iterable[str]:
     return [
         keyword.text.strip()
         for keyword in tree.findall(
@@ -769,7 +777,7 @@ def _get_keywords(tree) -> Iterable[str]:
     ]
 
 
-def _get_countries(tree, orcid) -> list[str]:
+def _get_countries(tree: Element, orcid: str) -> list[str]:
     rv = []
     for country in tree.findall(
         ".//address:addresses/address:address/address:country", namespaces=NAMESPACES
@@ -789,14 +797,14 @@ def _get_countries(tree, orcid) -> list[str]:
     return rv
 
 
-def _get_locale(tree, orcid) -> str | None:
+def _get_locale(tree: Element, orcid: str) -> str | None:
     value = tree.findtext(".//preferences:preferences/preferences:locale", namespaces=NAMESPACES)
     if value is None:
         return None
     return value.strip()
 
 
-def _get_works(tree, orcid) -> list[dict[str, str]]:
+def _get_works(tree: Element, orcid: str) -> list[dict[str, str]]:
     # get a subset of all works with pubmed IDs. TODO extend to other IDs
     pmids = set()
     for g in tree.findall(

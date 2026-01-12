@@ -61,7 +61,7 @@ class NonIndexingGildaGrounder(gilda.Grounder):
 class UngroupedSqliteEntries(SqliteEntries, dict):
     """An interface to the SQLite lexical index compatible with Gilda."""
 
-    def get(self, key, default=None) -> list[gilda.Term]:
+    def get(self, key: str, default: list[gilda.Term] | None = None) -> list[gilda.Term]:
         """Get a term from the lexical index."""
         res = self.get_connection().execute("SELECT term FROM terms WHERE norm_text=?", (key,))
         terms = res.fetchall()
@@ -102,14 +102,24 @@ class ExtendedMatcher(ssslm.GildaGrounder):
         return []
 
 
-def write_lexical_sqlite(*, version_info: VersionInfo | None = None, force: bool = False, ror_grounder: ssslm.Grounder | None) -> None:
+def write_lexical_sqlite(
+    *,
+    version_info: VersionInfo | None = None,
+    force: bool = False,
+    ror_grounder: ssslm.Grounder | None,
+) -> None:
     """Build a SQLite database file from a set of grounding entries."""
     path = _get_output_module(version_info).join(name="orcid-gilda.db")
     if path.is_file():
         path.unlink()
     _write_lexical_sqlite(
         path=path,
-        records=iter_records(desc="Writing SQLite index", version_info=version_info, force=force, ror_grounder=ror_grounder),
+        records=iter_records(
+            desc="Writing SQLite index",
+            version_info=version_info,
+            force=force,
+            ror_grounder=ror_grounder,
+        ),
     )
 
 
@@ -143,7 +153,12 @@ def _write_lexical_sqlite(path: Path, records: Iterable[Record]) -> None:
             cur.execute(q)
 
 
-def write_lexical(*, version_info: VersionInfo | None = None, force: bool = False, ror_grounder: ssslm.Grounder | None) -> None:
+def write_lexical(
+    *,
+    version_info: VersionInfo | None = None,
+    force: bool = False,
+    ror_grounder: ssslm.Grounder | None,
+) -> None:
     """Write SSSLM."""
     module = _get_output_module(version_info)
     lq_path = module.join(name="orcid.lq.ssslm.tsv.gz")
@@ -153,7 +168,9 @@ def write_lexical(*, version_info: VersionInfo | None = None, force: bool = Fals
     with safe_open_writer(lq_path) as lq_writer, safe_open_writer(hq_path) as hq_writer:
         lq_writer.writerow(LiteralMappingTuple._fields)
         hq_writer.writerow(LiteralMappingTuple._fields)
-        for record in iter_records(desc="Writing SSSLM", version_info=version_info, force=force, ror_grounder=ror_grounder):
+        for record in iter_records(
+            desc="Writing SSSLM", version_info=version_info, force=force, ror_grounder=ror_grounder
+        ):
             if not record.name:
                 continue
             is_hq = record.is_high_quality()

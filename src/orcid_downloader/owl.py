@@ -1,10 +1,12 @@
 """Write OWL."""
 
+from __future__ import annotations
+
 import gzip
 
 import pyobo
-from tqdm import tqdm
 import ssslm
+from tqdm import tqdm
 
 from orcid_downloader.api import VersionInfo, _get_output_module, iter_records
 
@@ -76,13 +78,13 @@ db: a owl:AnnotationProperty;
 """
 
 
-def write_owl_rdf(
+def write_owl_rdf(  # noqa:C901
     *,
     version_info: VersionInfo | None = None,
     force: bool = False,
     ror_grounder: ssslm.Grounder | None,
     ror_version: str | None,
-) -> None:  # noqa:C901
+) -> None:
     """Write OWL RDF in a gzipped file."""
     module = _get_output_module(version_info)
     path = module.join(name="orcid.ttl.gz")
@@ -95,7 +97,12 @@ def write_owl_rdf(
 
     with gzip.open(path, "wt") as file:
         file.write(PREAMBLE + "\n")
-        for record in iter_records(desc="Writing OWL RDF", version_info=version_info, force=force, ror_grounder=ror_grounder):
+        for record in iter_records(
+            desc="Writing OWL RDF",
+            version_info=version_info,
+            force=force,
+            ror_grounder=ror_grounder,
+        ):
             if not record.name:
                 continue
             ror_parts = []
@@ -146,4 +153,4 @@ def write_owl_rdf(
 
 
 if __name__ == "__main__":
-    write_owl_rdf()
+    write_owl_rdf(ror_grounder=None, ror_version=None)

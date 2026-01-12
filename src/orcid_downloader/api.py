@@ -9,11 +9,11 @@ import logging
 import tarfile
 import typing
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, TextIO
 from urllib.parse import parse_qs, unquote, urlparse
 
 import bioregistry
@@ -1132,7 +1132,12 @@ def write_summaries(  # noqa:C901
         write_counter(file, ("role", "count"), employment_roles)
 
 
-def write_counter(file, header, counter, examples=None) -> None:
+def write_counter(
+    file: TextIO,
+    header: Sequence[str],
+    counter: Counter[str],
+    examples: dict[str, str] | None = None,
+) -> None:
     """Write a counter to a TSV file."""
     writer = csv.writer(file, delimiter="\t")
     if examples is not None:

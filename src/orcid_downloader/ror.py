@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+import gilda
 import pyobo
 import ssslm
-from gilda.grounder import Grounder, ScoredMatch
 
 __all__ = [
     "RORGrounder",
@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 
-class RORGrounder(Grounder):
+class RORGrounder(gilda.Grounder):
     """A grounder for organizations based on ROR."""
 
     def ground(
@@ -23,7 +23,7 @@ class RORGrounder(Grounder):
         context: str | None = None,
         organisms: list[str] | None = None,
         namespaces: list[str] | None = None,
-    ) -> list[ScoredMatch]:
+    ) -> list[gilda.ScoredMatch]:
         """Ground an organization, and fallback with optional preprocessing."""
         if scored_matches := super().ground(
             text,
@@ -31,10 +31,10 @@ class RORGrounder(Grounder):
             organisms=organisms,
             namespaces=namespaces,
         ):
-            return scored_matches
+            return scored_matches  # type:ignore[no-any-return]
 
         norm_str = text.removeprefix("The ").replace(",", "")
-        return super().ground(
+        return super().ground(  # type:ignore[no-any-return]
             norm_str,
             context=context,
             organisms=organisms,

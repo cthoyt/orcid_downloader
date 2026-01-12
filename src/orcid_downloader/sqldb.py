@@ -49,7 +49,7 @@ def write_sqlite(
     *,
     version_info: VersionInfo | None = None,
     researcher_table_name: str = "person",
-    organization_table_name="organization",
+    organization_table_name: str = "organization",
     name_index: bool = False,
     force: bool = False,
     ror_grounder: ssslm.Grounder | None,

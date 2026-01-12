@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 
 import pystow
 import wikidata_client
@@ -45,7 +46,7 @@ def get_orcid_to_commons_image() -> dict[str, str]:
     """Get all ORCID to image mappings, using a cache if pre-downloaded."""
     if IMAGE_PATH.is_file():
         with IMAGE_PATH.open() as file:
-            return json.load(file)
+            return cast(dict[str, str], json.load(file))
 
     # ran on web in 43,678 ms, but for some reason stalls out when run this way
     records = wikidata_client.query(

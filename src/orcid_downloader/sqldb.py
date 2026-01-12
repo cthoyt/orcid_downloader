@@ -3,7 +3,7 @@
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from typing import Literal, overload
+from typing import Literal, overload, TYPE_CHECKING
 
 import bioregistry
 from pydantic import BaseModel
@@ -12,6 +12,9 @@ from semantic_pydantic import SemanticField
 from tqdm import tqdm
 
 from orcid_downloader.api import VersionInfo, _get_output_module, iter_records
+
+if TYPE_CHECKING:
+    import pyobo.sources.ror
 
 __all__ = [
     "Metadata",
@@ -49,24 +52,30 @@ def write_sqlite(
     organization_table_name="organization",
     name_index: bool = False,
     force: bool = False,
+    records: list[pyobo.sources.ror.Record]  | None=  None
 ) -> None:
     """Write a SQLite database."""
     import pandas as pd
     from pyobo.sources.geonames.geonames import get_code_to_country
-    from pyobo.sources.ror import get_latest
 
-    _, _, records = get_latest()
-    id_to_name = {country.identifier: country.name for country in get_code_to_country().values()}
+    if records is None:
+        from pyobo.sources.ror import get_latest
+
+        _, _, records = get_latest()
+
     ror_rows = []
     for record in tqdm(records, unit_scale=True, unit="record", desc="Parsing ROR"):
-        identifier = record["id"].removeprefix("https://ror.org/")
-        name = record["name"]
+        identifier = record.id.removeprefix("https://ror.org/")
+        name = record.get_preferred_label()
+        country_code = None
         country_name = None
-        for address in record.get("addresses", []):
-            country_id = address["country_geonames_id"]
-            country_name = id_to_name[str(country_id)]
-            break
-        ror_rows.append((identifier, name, country_name))
+        for location in record.locations:
+            # two-letter country code
+            country_code = location.geonames_details.country_code
+            country_name = location.geonames_details.country_name
+            if country_name:
+                break
+        ror_rows.append((identifier, name, country_code, country_name))
     ror_df = pd.DataFrame(ror_rows, columns=["ror", "name", "country"])
     orcid_df = pd.DataFrame(
         (
@@ -105,7 +114,8 @@ def write_sqlite(
                 CREATE TABLE {organization_table_name} (
                     ror text not null primary key,
                     name text not null,
-                    country text
+                    country CHAR(2),
+                    country_name text
                 )
             """
             )

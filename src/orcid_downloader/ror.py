@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import gilda
 import pyobo
 import ssslm
+
+if TYPE_CHECKING:
+    import gilda.grounder
 
 __all__ = [
     "RORGrounder",
@@ -23,7 +27,7 @@ class RORGrounder(gilda.Grounder):
         context: str | None = None,
         organisms: list[str] | None = None,
         namespaces: list[str] | None = None,
-    ):
+    ) -> list[gilda.grounder.ScoredMatch]:
         """Ground an organization, and fallback with optional preprocessing."""
         if scored_matches := super().ground(
             text,
@@ -43,6 +47,6 @@ class RORGrounder(gilda.Grounder):
 
 
 @lru_cache(1)
-def get_ror_grounder() -> ssslm.Grounder:
+def get_ror_grounder(version: str | None = None) -> ssslm.Grounder:
     """Get a grounder for ROR."""
-    return pyobo.get_grounder("ror", grounder_cls=RORGrounder, progress=False)
+    return pyobo.get_grounder("ror", grounder_cls=RORGrounder, force_process=True, version=version)

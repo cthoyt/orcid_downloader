@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 import bioregistry
@@ -29,6 +29,9 @@ from tqdm.auto import tqdm
 
 from orcid_downloader.name_utils import clean_name, reconcile_aliases
 from orcid_downloader.standardize import standardize_role, write_role_counters
+
+if TYPE_CHECKING:
+    from xml.etree.ElementTree import Element, ElementTree
 
 __all__ = [
     "Record",
@@ -82,10 +85,18 @@ VERSION_2024 = VersionInfo(
     version="2024",
     url="https://orcid.figshare.com/ndownloader/files/49560102",
     fname="ORCID_2024_10_summaries.tar.gz",
-    size=18_600_000,  # FIXME
+    size=18_600_000,  # FIXME this is the number of records
 )
 
-VERSION_DEFAULT = VERSION_2023
+#: See https://orcid.figshare.com/articles/dataset/ORCID_Public_Data_File_2025/30375589
+VERSION_2025 = VersionInfo(
+    version="2025",
+    url="https://orcid.figshare.com/ndownloader/files/58834837",
+    fname="ORCID_2025_10_summaries.tar.gz",
+    size=26_200_000,
+)
+
+VERSION_DEFAULT = VERSION_2025
 
 NAMESPACES = {
     "personal-details": "http://www.orcid.org/ns/personal-details",
@@ -381,13 +392,14 @@ def _iter_tarfile_members(path: Path):
     tar_file.close()
 
 
-def iter_records(
+def iter_records(  # noqa:C901
     *,
     force: bool = False,
     records_path: Path | None = None,
     desc: str = "Loading ORCID",
     head: int | None = None,
     version_info: VersionInfo | None,
+    ror_grounder: ssslm.Grounder | None,
 ) -> Iterable[Record]:
     """Parse ORCID summary XML files, takes about an hour."""
     if version_info is None:
@@ -404,11 +416,14 @@ def iter_records(
                 yield Record.model_validate_json(line)
 
     else:
-        from orcid_downloader.ror import get_ror_grounder
         from orcid_downloader.wikidata import get_orcid_to_commons_image, get_orcid_to_wikidata
 
-        tqdm.write("getting ROR grounder")
-        ror_grounder = get_ror_grounder()
+        if ror_grounder is None:
+            from orcid_downloader.ror import get_ror_grounder
+
+            tqdm.write("getting ROR grounder")
+            ror_grounder = get_ror_grounder()
+
         tqdm.write("getting ORCID to Wikidata mapping")
         orcid_to_wikidata = get_orcid_to_wikidata()
         tqdm.write("getting ORCID to Wikimedia commons")
@@ -466,10 +481,18 @@ def iter_records(
 
 
 def get_records(
-    *, force: bool = False, version_info: VersionInfo | None = None
+    *,
+    force: bool = False,
+    version_info: VersionInfo | None = None,
+    ror_grounder: ssslm.Grounder | None,
 ) -> dict[str, Record]:
     """Parse ORCID summary XML files, takes about an hour."""
-    return {record.orcid: record for record in iter_records(force=force, version_info=version_info)}
+    return {
+        record.orcid: record
+        for record in iter_records(
+            force=force, version_info=version_info, ror_grounder=ror_grounder
+        )
+    }
 
 
 def _process_file(  # noqa:C901
@@ -545,7 +568,7 @@ def _process_file(  # noqa:C901
     if employments:
         record["employments"] = employments
 
-    educations = _get_educations(tree, aggiliation_grounder=ror_grounder)
+    educations = _get_educations(tree, affiliation_grounder=ror_grounder)
     if educations:
         record["educations"] = educations
 
@@ -582,10 +605,12 @@ def _process_file(  # noqa:C901
 
 def _iter_other_names(t) -> Iterable[str]:
     for part in t.findall(".//other-name:content", namespaces=NAMESPACES):
+        if not part.text:
+            continue
         part = part.text.strip()
         for z in part.split(";"):
             z = z.strip()
-            if z is not None and " " in z and len(z) < 60:
+            if z and " " in z and len(z) < 60:
                 yield clean_name(z.strip())
 
 
@@ -847,26 +872,28 @@ def _standardize_pubmed(pubmed: str) -> str | None:
     return None
 
 
-def _get_employments(tree, affiliation_grounder: ssslm.Grounder):
+def _get_employments(tree: ElementTree, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
     elements = tree.findall(".//employment:employment-summary", namespaces=NAMESPACES)
     return _get_affiliations(elements, affiliation_grounder)
 
 
-def _get_educations(tree, aggiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
+def _get_educations(tree: ElementTree, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
     elements = tree.findall(
         ".//activities:educations//education:education-summary", namespaces=NAMESPACES
     )
-    return _get_affiliations(elements, aggiliation_grounder)
+    return _get_affiliations(elements, affiliation_grounder)
 
 
-def _get_memberships(tree, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
+def _get_memberships(tree: ElementTree, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
     elements = tree.findall(
         ".//activities:memberships//membership:membership-summary", namespaces=NAMESPACES
     )
     return _get_affiliations(elements, affiliation_grounder)
 
 
-def _get_affiliations(elements, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
+def _get_affiliations(
+    elements: list[Element], affiliation_grounder: ssslm.Grounder
+) -> list[Affiliation]:
     results = []
     for element in elements:
         if element is None:
@@ -895,7 +922,7 @@ def _get_affiliations(elements, affiliation_grounder: ssslm.Grounder) -> list[Af
     return results
 
 
-def _get_date(date_element) -> Date | None:
+def _get_date(date_element: Element) -> Date | None:
     year = date_element.findtext(".//common:year", namespaces=NAMESPACES)
     if year is None:
         return None
@@ -905,7 +932,7 @@ def _get_date(date_element) -> Date | None:
 
 
 def _get_disambiguated_organization(
-    organization_element, name, grounder: ssslm.Grounder
+    organization_element: Element, name: str, grounder: ssslm.Grounder
 ) -> dict[str, str]:
     references = {}
     for de in organization_element.findall(
@@ -934,7 +961,7 @@ def _get_disambiguated_organization(
 MINIMUM_ROLE_LENGTH = 4
 
 
-def _get_role(element) -> NamedReference | str | None:
+def _get_role(element: Element) -> NamedReference | str | None:
     text = element.findtext(".//common:role-title", namespaces=NAMESPACES)
     if not text:
         return None
@@ -967,7 +994,12 @@ def write_schema(path: Path) -> None:
     path.write_text(json.dumps(schema, indent=2))
 
 
-def write_summaries(*, version_info: VersionInfo | None = None, force: bool = False):  # noqa:C901
+def write_summaries(  # noqa:C901
+    *,
+    version_info: VersionInfo | None = None,
+    force: bool = False,
+    ror_grounder: ssslm.Grounder | None,
+) -> None:
     """Write summary files."""
     from tabulate import tabulate
 
@@ -1004,7 +1036,10 @@ def write_summaries(*, version_info: VersionInfo | None = None, force: bool = Fa
         )
 
         for record in iter_records(
-            force=force, desc="Writing summaries", version_info=version_info
+            force=force,
+            desc="Writing summaries",
+            version_info=version_info,
+            ror_grounder=ror_grounder,
         ):
             if record.emails:
                 has_email += 1

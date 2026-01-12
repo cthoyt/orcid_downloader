@@ -16,6 +16,7 @@
 """
 
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 
 import pystow
@@ -263,7 +264,7 @@ def write_counter(
     counter: Counter[str] | Counter[tuple[str, ...]],
     path: str | Path,
     sep: str | None = None,
-    header=None,
+    header: Sequence[str] | None = None,
 ) -> None:
     """Write a counter."""
     path = Path(path).expanduser().resolve()

@@ -4,6 +4,7 @@ import gzip
 
 import pyobo
 from tqdm import tqdm
+import ssslm
 
 from orcid_downloader.api import VersionInfo, _get_output_module, iter_records
 
@@ -75,19 +76,26 @@ db: a owl:AnnotationProperty;
 """
 
 
-def write_owl_rdf(*, version_info: VersionInfo | None = None, force: bool = False) -> None:  # noqa:C901
+def write_owl_rdf(
+    *,
+    version_info: VersionInfo | None = None,
+    force: bool = False,
+    ror_grounder: ssslm.Grounder | None,
+    ror_version: str | None,
+) -> None:  # noqa:C901
     """Write OWL RDF in a gzipped file."""
     module = _get_output_module(version_info)
     path = module.join(name="orcid.ttl.gz")
 
     tqdm.write(f"Writing OWL RDF to {path}")
 
-    ror_id_to_name = {k: v.replace('"', '\\"') for k, v in pyobo.get_id_name_mapping("ror").items()}
-    ror_written = set()
+    ror_id_to_name = pyobo.get_id_name_mapping("ror", version=ror_version)
+    ror_id_to_name = {k: v.replace('"', '\\"') for k, v in ror_id_to_name.items()}
+    ror_written: set[str] = set()
 
     with gzip.open(path, "wt") as file:
         file.write(PREAMBLE + "\n")
-        for record in iter_records(desc="Writing OWL RDF", version_info=version_info, force=force):
+        for record in iter_records(desc="Writing OWL RDF", version_info=version_info, force=force, ror_grounder=ror_grounder):
             if not record.name:
                 continue
             ror_parts = []
@@ -102,25 +110,32 @@ def write_owl_rdf(*, version_info: VersionInfo | None = None, force: bool = Fals
                 if not org.ror:
                     continue
                 if org.ror not in ror_written:
-                    ror_parts.append(f'r:{org.ror} a g:; l: "{ror_id_to_name[org.ror]}" .')
+                    if org_ror_name := ror_id_to_name.get(org.ror):
+                        ror_parts.append(f'r:{org.ror} a g:; l: "{org_ror_name}" .')
+                    else:
+                        ror_parts.append(f"r:{org.ror} a g: .")
                     ror_written.add(org.ror)
                 parts.append(f"w: r:{org.ror}")
             for education_org in record.educations:
                 if not education_org.ror:
                     continue
                 if education_org.ror not in ror_written:
-                    ror_parts.append(
-                        f'r:{education_org.ror} a g:; l: "{ror_id_to_name[education_org.ror]}" .'
-                    )
+                    if education_org_ror_name := ror_id_to_name.get(education_org.ror):
+                        ror_parts.append(
+                            f'r:{education_org.ror} a g:; l: "{education_org_ror_name}" .'
+                        )
+                    else:
+                        ror_parts.append(f"r:{education_org.ror} a g: .")
                     ror_written.add(education_org.ror)
                 parts.append(f"e: r:{education_org.ror}")
             for member_org in record.educations:
                 if not member_org.ror:
                     continue
                 if member_org.ror not in ror_written:
-                    ror_parts.append(
-                        f'r:{member_org.ror} a g:; l: "{ror_id_to_name[member_org.ror]}" .'
-                    )
+                    if member_org_ror_name := ror_id_to_name.get(member_org.ror):
+                        ror_parts.append(f'r:{member_org.ror} a g:; l: "{member_org_ror_name}" .')
+                    else:
+                        ror_parts.append(f"r:{member_org.ror} a g: .")
                     ror_written.add(member_org.ror)
                 parts.append(f"m: r:{member_org.ror}")
             if record.homepage:

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pystow
 import qualo
-from curies import NamedReference
+from curies import NamableReference
 from tqdm import tqdm
 
 __all__ = [
@@ -192,7 +192,9 @@ REVERSE_REPLACEMENTS = {
 for k in REVERSE_REPLACEMENTS:
     REVERSE_REPLACEMENTS[k].add(_norm(k))
 
-REPLACEMENTS = {_norm(value): k for k, values in REVERSE_REPLACEMENTS.items() for value in values}
+REPLACEMENTS: dict[str, str] = {
+    _norm(value): k for k, values in REVERSE_REPLACEMENTS.items() for value in values
+}
 
 #: contains all roles
 ROLE_COUNTER_1: Counter[str] = Counter()
@@ -201,7 +203,9 @@ ROLE_COUNTER_1: Counter[str] = Counter()
 ROLE_COUNTER_2: Counter[str] = Counter()
 
 
-def standardize_role(role: str) -> tuple[str, bool, NamedReference | None]:  # noqa: C901
+def standardize_role(  # noqa:C901
+    role: str,
+) -> tuple[NamableReference, bool] | tuple[str, bool]:
     """Standardize a role string."""
     role = role.strip().replace("\t", " ").replace("  ", " ")
 
@@ -212,12 +216,12 @@ def standardize_role(role: str) -> tuple[str, bool, NamedReference | None]:  # n
     role = role.strip()
 
     reference = qualo.ground(role)
-    if reference:
-        return reference.name, True, reference
+    if reference is not None:
+        return reference, True
 
     role_norm = _norm(role)
     if role_norm in REPLACEMENTS:
-        return REPLACEMENTS[role_norm], True, None
+        return REPLACEMENTS[role_norm], True
 
     ROLE_COUNTER_1[role] += 1
 
@@ -226,32 +230,32 @@ def standardize_role(role: str) -> tuple[str, bool, NamedReference | None]:  # n
             continue
         x = role.split(splits, 2)[0]
         reference = qualo.ground(x)
-        if reference:
+        if reference is not None:
             # TODO get rid of this - everything in here should get curated
             ROLE_COUNTER_2[role] += 1
-            return reference.name, True, reference
+            return reference, True
         y = _norm(x)
         if y in REPLACEMENTS:
-            return REPLACEMENTS[y], True, None
+            return REPLACEMENTS[y], True
 
     if role_norm.startswith("bscin") or role_norm.startswith("bsc "):
         # TODO get rid of this - everything in here should get curated
         ROLE_COUNTER_2[role] += 1
-        return "Bachelor of Science", True, None
+        return "Bachelor of Science", True
     if role_norm.startswith("mscin") or role_norm.startswith("msc "):
         # TODO get rid of this - everything in here should get curated
         ROLE_COUNTER_2[role] += 1
-        return "Master of Science", True, None
+        return "Master of Science", True
     if role_norm.startswith("main") or role_norm.startswith("ma "):
         # TODO get rid of this - everything in here should get curated
         ROLE_COUNTER_2[role] += 1
-        return "Master of Arts", True, None
+        return "Master of Arts", True
     if role_norm.startswith("phdin") or role_norm.startswith("phd student in "):
         # TODO get rid of this - everything in here should get curated
         ROLE_COUNTER_2[role] += 1
-        return "Doctor of Philosophy", True, None
+        return "Doctor of Philosophy", True
 
-    return role, False, None
+    return role, False
 
 
 def write_role_counters() -> None:

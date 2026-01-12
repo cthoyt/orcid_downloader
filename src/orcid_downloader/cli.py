@@ -55,7 +55,7 @@ def main(test: bool, ror_version: str | None) -> None:
     write_schema(schema_path)
 
     click.echo("Writing summaries")
-    write_summaries(version_info=version_info, force=not test, ror_grounder=ror_grounder)
+    write_summaries(version_info=version_info, force=False, ror_grounder=ror_grounder)
 
     click.echo("Writing SQLite")
     write_sqlite(version_info=version_info, force=False, ror_grounder=ror_grounder)

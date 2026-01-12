@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import gzip
-import io
 import json
 import logging
 import tarfile
@@ -14,13 +13,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 import bioregistry
 import pystow
 import ssslm
-from curies import NamedReference
+from curies import NamableReference
 from lxml import etree
 from pydantic import BaseModel, Field
 from pydantic_extra_types.country import CountryAlpha2, _index_by_alpha2
@@ -261,7 +260,7 @@ class Affiliation(BaseModel):
     name: str
     start: Date | None = Field(None, title="Start Year")
     end: Date | None = Field(None, title="End Year")
-    role: None | str | NamedReference = None
+    role: None | str | NamableReference = None
     xrefs: dict[str, str] = Field(default_factory=dict, title="Database Cross-references")
 
     # xrefs includes ror, ringgold, grid, funderregistry, lei
@@ -276,7 +275,7 @@ class Affiliation(BaseModel):
 class Record(BaseModel):
     """A model representing a person."""
 
-    orcid: str = SemanticField(..., prefix="orcid")
+    orcid: Annotated[str, SemanticField(..., prefix="orcid")]
     name: str = Field(..., min_length=1)
     homepage: str | None = Field(None)
     locale: str | None = Field(None)
@@ -384,12 +383,15 @@ class Record(BaseModel):
         return None
 
 
-def _iter_tarfile_members(path: Path) -> Iterable[io.BufferedReader]:
+def _iter_tarfile_members(path: Path) -> Iterable[typing.IO[bytes]]:
     tar_file = tarfile.open(path)
     while member := tar_file.next():
         if not member.name.endswith(".xml"):
             continue
-        yield tar_file.extractfile(member)
+        yv = tar_file.extractfile(member)
+        if yv is None:
+            continue
+        yield yv
     tar_file.close()
 
 
@@ -417,6 +419,7 @@ def iter_records(  # noqa:C901
                 yield Record.model_validate_json(line)
 
     else:
+        raise RuntimeError(f"no cached records found in {records_path}")
         from orcid_downloader.wikidata import get_orcid_to_commons_image, get_orcid_to_wikidata
 
         if ror_grounder is None:
@@ -608,8 +611,7 @@ def _iter_other_names(t: Element) -> Iterable[str]:
     for part in t.findall(".//other-name:content", namespaces=NAMESPACES):
         if not part.text:
             continue
-        part = part.text.strip()
-        for z in part.split(";"):
+        for z in part.text.strip().split(";"):
             z = z.strip()
             if z and " " in z and len(z) < 60:
                 yield clean_name(z.strip())
@@ -673,6 +675,7 @@ def _get_external_identifiers(tree: Element, orcid: str) -> tuple[dict[str, str]
         url = url.removeprefix("https://")
         url = url.removeprefix("Https://")
         url = url.removeprefix("http://")
+
         if url.startswith("github.com/"):
             identifier = url.removeprefix("github.com/")
             identifier = identifier.split("?")[0]  # remove trash like ?tab=repositories
@@ -687,32 +690,24 @@ def _get_external_identifiers(tree: Element, orcid: str) -> tuple[dict[str, str]
         elif "facebook" in url or "instagram" in url:
             continue  # skip social media
         elif url.startswith("www.wikidata.org/wiki/"):
-            identifier = url.removeprefix("www.wikidata.org/wiki/")
-            rv["wikidata"] = identifier
+            rv["wikidata"] = url.removeprefix("www.wikidata.org/wiki/")
         elif url.startswith("tools.wmflabs.org/scholia/author/"):
-            identifier = url.removeprefix("tools.wmflabs.org/scholia/author/")
-            rv["wikidata"] = identifier
+            rv["wikidata"] = url.removeprefix("tools.wmflabs.org/scholia/author/")
         elif "linkedin.com/in/" in url:  # multiple languages subdomains, so startswith doesn't work
-            identifier = url.rstrip("/").split("linkedin.com/in/")[1]
-            rv["linkedin"] = unquote(identifier)
+            rv["linkedin"] = unquote(url.rstrip("/").split("linkedin.com/in/")[1])
         elif "scholar.google" in url:
             parsed_url = urlparse(url)
             query_params = parse_qs(parsed_url.query)
-            identifier = query_params.get("user", [None])[0]
-            if identifier:
-                rv["google.scholar"] = identifier
+            if google_scholar_ids := query_params.get("user"):
+                rv["google.scholar"] = google_scholar_ids[0]
         elif url.startswith("publons.com/author/"):
-            identifier = url.removeprefix("publons.com/author/").split("/")[0]
-            rv["publons.researcher"] = identifier
+            rv["publons.researcher"] = url.removeprefix("publons.com/author/").split("/")[0]
         elif url.startswith("www.researchgate.net/profile/"):
-            identifier = url.removeprefix("www.researchgate.net/profile/")
-            rv["researchgate.profile"] = identifier
+            rv["researchgate.profile"] = url.removeprefix("www.researchgate.net/profile/")
         elif url.startswith("www.scopus.com/authid/detail.uri?authorId="):
-            identifier = url.removeprefix("www.scopus.com/authid/detail.uri?authorId=")
-            rv["scopus"] = identifier
+            rv["scopus"] = url.removeprefix("www.scopus.com/authid/detail.uri?authorId=")
         elif url.startswith("www.webofscience.com/wos/author/record/"):
-            identifier = url.removeprefix("www.webofscience.com/wos/author/record/")
-            rv["wos.researcher"] = identifier
+            rv["wos.researcher"] = url.removeprefix("www.webofscience.com/wos/author/record/")
         elif url.startswith("lattes.cnpq.br/"):
             rv["lattes"] = url.removeprefix("lattes.cnpq.br/")
         elif url.startswith("dialnet.unirioja.es/servlet/autor?codigo="):
@@ -764,6 +759,7 @@ def _get_emails(tree: Element) -> list[str]:
     return [
         email.text.strip()
         for email in tree.findall(".//email:emails/email:email/email:email", namespaces=NAMESPACES)
+        if email.text
     ]
 
 
@@ -916,7 +912,7 @@ def _get_affiliations(
         references = _get_disambiguated_organization(
             organization_element, name, affiliation_grounder
         )
-        record = {"name": name.strip(), "xrefs": references}
+        record: dict[str, Any] = {"name": name.strip(), "xrefs": references}
 
         if (start_date := element.find(".//common:start-date", namespaces=NAMESPACES)) is not None:
             record["start"] = _get_date(start_date)
@@ -969,16 +965,14 @@ def _get_disambiguated_organization(
 MINIMUM_ROLE_LENGTH = 4
 
 
-def _get_role(element: Element) -> NamedReference | str | None:
+def _get_role(element: Element) -> NamableReference | str | None:
     text = element.findtext(".//common:role-title", namespaces=NAMESPACES)
     if not text:
         return None
-    label, _, reference = standardize_role(text)
-    if len(label) < MINIMUM_ROLE_LENGTH:
+    rr, _ = standardize_role(text)
+    if isinstance(rr, str) and len(rr) < MINIMUM_ROLE_LENGTH:
         return None
-    if reference:
-        return reference
-    return label
+    return rr
 
 
 def ground_researcher(name: str, *, version_info: VersionInfo | None = None) -> list[ssslm.Match]:

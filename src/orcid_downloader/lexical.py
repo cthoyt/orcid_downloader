@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from contextlib import closing
 from functools import lru_cache
 from itertools import batched
@@ -61,7 +61,7 @@ class NonIndexingGildaGrounder(gilda.Grounder):
 class UngroupedSqliteEntries(SqliteEntries, dict):
     """An interface to the SQLite lexical index compatible with Gilda."""
 
-    def get(self, key: str, default: list[gilda.Term] | None = None) -> list[gilda.Term]:
+    def get(self, key: str, default: list[gilda.Term] | None = None) -> list[gilda.Term] | None:  # type:ignore[override]
         """Get a term from the lexical index."""
         res = self.get_connection().execute("SELECT term FROM terms WHERE norm_text=?", (key,))
         terms = res.fetchall()
@@ -69,7 +69,7 @@ class UngroupedSqliteEntries(SqliteEntries, dict):
             return default
         return [gilda.Term(**json.loads(term)) for (term,) in terms]
 
-    def values(self) -> Iterable[gilda.Term]:
+    def values(self) -> Iterable[gilda.Term]:  # type:ignore[override]
         """Iterate over the terms in the lexical index."""
         res = self.get_connection().execute("SELECT term FROM terms")
         for (result,) in res.fetchall():
@@ -80,7 +80,7 @@ class UngroupedSqliteEntries(SqliteEntries, dict):
         res = self.get_connection().execute("SELECT COUNT(DISTINCT norm_text) FROM terms")
         return res.fetchone()[0]
 
-    def __iter__(self) -> Iterable[gilda.Term]:
+    def __iter__(self) -> Iterator[gilda.Term]:
         """Iterate over the keys in the lexical index."""
         res = self.get_connection().execute("SELECT DISTINCT norm_text FROM terms")
         for (norm_text,) in tqdm(
@@ -92,7 +92,7 @@ class UngroupedSqliteEntries(SqliteEntries, dict):
 class ExtendedMatcher(ssslm.GildaGrounder):
     """A matcher that had an alternate text generator function."""
 
-    def get_matches(self, text, **kwargs: Any) -> list[ssslm.Match]:
+    def get_matches(self, text, **kwargs: Any) -> list[ssslm.Match]:  # type:ignore
         """Ground a string to a researcher, also trying synonym generation during lookup."""
         if matches := super().get_matches(text, **kwargs):
             return matches

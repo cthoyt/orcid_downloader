@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal, cast, overload
+from typing import Annotated, Literal, cast, overload
 
 import bioregistry
 import ssslm
@@ -15,9 +15,6 @@ from semantic_pydantic import SemanticField
 from tqdm import tqdm
 
 from orcid_downloader.api import VersionInfo, _get_output_module, iter_records
-
-if TYPE_CHECKING:
-    from pyobo.sources.ror import Record
 
 __all__ = [
     "Metadata",
@@ -56,29 +53,25 @@ def write_sqlite(
     name_index: bool = False,
     force: bool = False,
     ror_grounder: ssslm.Grounder | None,
-    records: list[Record] | None = None,
 ) -> None:
     """Write a SQLite database."""
     import pandas as pd
+    from pyobo.sources.ror import get_ror_records
 
-    if records is None:
-        from pyobo.sources.ror import get_latest
-
-        _, _, records = get_latest()
-
+    _, ror_records = get_ror_records()
     ror_rows = []
-    for record in tqdm(records, unit_scale=True, unit="record", desc="Parsing ROR"):
-        identifier = record.id.removeprefix("https://ror.org/")
-        name = record.get_preferred_label()
+    for ror_record in tqdm(ror_records, unit_scale=True, unit="record", desc="Parsing ROR"):
+        ror_identifier = ror_record.id.removeprefix("https://ror.org/")
+        name = ror_record.get_preferred_label()
         country_code = None
         country_name = None
-        for location in record.locations:
+        for location in ror_record.locations:
             # two-letter country code
             country_code = location.geonames_details.country_code
             country_name = location.geonames_details.country_name
             if country_code and country_name:
                 break
-        ror_rows.append((identifier, name, country_code, country_name))
+        ror_rows.append((ror_identifier, name, country_code, country_name))
     ror_df = pd.DataFrame(ror_rows, columns=["ror", "name", "country", "country_name"])
     orcid_df = pd.DataFrame(
         (

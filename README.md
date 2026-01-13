@@ -40,22 +40,19 @@ import orcid_downloader
 # Takes 10-15 minutes to download
 path = orcid_downloader.ensure_summaries()
 
-# Takes a bit more than an hour to parse after downloading was done
+# Takes ~2 hours to parse after downloading was done
 records = orcid_downloader.get_records()
 ```
 
 The processed records are distributed
-on [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.11371268.svg)](https://zenodo.org/records/11371268).
+on [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10137939.svg)](https://zenodo.org/records/10137939).
 
 Grounding can be done on the name field, aliases, and credit name field:
 
 ```python
 >>> orcid_downloader.ground_researcher("Charles Hoyt")
-[ScoredMatch(Term(charles hoyt,Charles Hoyt,orcid,0000-0003-4423-4370,Charles Tapley Hoyt,synonym,orcid,None,None,None),0.5555555555555556,Match(query=Charles Hoyt,ref=Charles Hoyt,exact=True,space_mismatch=False,dash_mismatches={},cap_combos=[]))]
+[Match(reference=NamedReference(prefix='orcid', identifier='0000-0003-4423-4370', name='Charles Tapley Hoyt'), score=0.5555555555555556)]
 ```
-
-> **Note**
-> It takes about 5 minutes to warm up the grounder, if the data has already been downloaded and processed.
 
 ## 🚀 Installation
 
@@ -148,11 +145,11 @@ available [here](https://github.com/cruft/cruft?tab=readme-ov-file#updating-a-pr
 
 ### 🥼 Testing
 
-After cloning the repository and installing `tox` and `tox-uv` with `pip install tox tox-uv`,
+After cloning the repository and installing `tox` with `pip install tox tox-uv`, 
 the unit tests in the `tests/` folder can be run reproducibly with:
 
 ```shell
-tox
+tox -e py
 ```
 
 Additionally, these tests are automatically re-run with each commit in a
@@ -250,9 +247,9 @@ be found [here](https://packaging.python.org/en/latest/specifications/pypirc).
 
 #### Uploading to PyPI
 
-After installing the package in development mode and installing `tox` and `tox-uv` with `pip install tox tox-uv`,
-the commands for making a new release are contained within the `finish` environment
-in `tox.ini`. Run the following from the shell:
+After installing the package in development mode and installing
+`tox` with `pip install tox tox-uv`,
+run the following from the shell:
 
 ```shell
 tox -e finish
@@ -260,10 +257,11 @@ tox -e finish
 
 This script does the following:
 
-1. Uses [Bump2Version](https://github.com/c4urself/bump2version) to switch the version number in
+1. Uses [bump-my-version](https://github.com/callowayproject/bump-my-version) to switch the version number in
    the `pyproject.toml`, `CITATION.cff`, `src/orcid_downloader/version.py`,
    and [`docs/source/conf.py`](docs/source/conf.py) to not have the `-dev` suffix
-2. Packages the code in both a tar archive and a wheel using [`build`](https://github.com/pypa/build)
+2. Packages the code in both a tar archive and a wheel using
+   [`uv build`](https://docs.astral.sh/uv/guides/publish/#building-your-package)
 3. Uploads to PyPI using [`twine`](https://github.com/pypa/twine).
 4. Push to GitHub. You'll need to make a release going with the commit where the version was bumped.
 5. Bump the version to the next patch. If you made big changes and want to bump the version by minor, you can

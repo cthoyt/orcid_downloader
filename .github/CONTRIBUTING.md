@@ -33,7 +33,7 @@ acceptance and merge into the main branch. This has several benefits:
 ### Code Style
 
 This project uses `tox` for running code quality checks. Start by installing
-`tox` and `tox-uv` with `pip install tox tox-uv`.
+it with `pip install tox tox-uv`.
 
 This project encourages the use of optional static typing. It
 uses [`mypy`](http://mypy-lang.org/) as a type checker. You can check if
@@ -81,8 +81,8 @@ build it locally with `tox -e docs`.
 
 Functions in this repository should be unit tested. These can either be written
 using the `unittest` framework in the `tests/` directory or as embedded
-doctests. You can check that the unit tests pass with `tox -e py` and that the
-doctests pass with `tox -e doctests`. These tests are required to pass for
+doctests. You can check that the unit tests pass with `tox -e py`
+and that the doctests pass with `tox -e doctests`. These tests are required to pass for
 accepting a contribution.
 
 ### Syncing your fork

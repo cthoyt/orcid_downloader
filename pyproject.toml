@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orcid_downloader"
-version = "0.0.2-dev"
+version = "0.0.8-dev"
 description = "Download and process ORCID in bulk"
 readme = "README.md"
 authors = [
@@ -48,9 +48,11 @@ dependencies = [
     "lxml",
     "pystow",
     "pydantic",
-    "pydantic_extra_types",
-    "pycountry",
+    "pydantic_extra_types[pycountry]",
     "semantic_pydantic",
+    "bioregistry>=0.11.13",
+    "qualo>=0.0.2",
+    "wikidata_client",
 ]
 
 [project.optional-dependencies]
@@ -59,17 +61,18 @@ tests = [
     "coverage",
 ]
 process = [
-    "pyobo",
-    "gilda",
+    "pyobo>=0.12.15",
+    "ssslm[gilda-slim]",
+    "gilda-slim>=1.4.1.1",
     "tabulate",
 ]
 autocomplete = [
-    "gilda",
+    "ssslm[gilda-slim]",
     "fastapi",
 ]
 docs = [
-    "sphinx",
-    "sphinx-rtd-theme",
+    "sphinx>=8",
+    "sphinx-rtd-theme>=3.0",
     "sphinx_automodapi",
 ]
 
@@ -109,6 +112,12 @@ plugins = [
 [tool.doc8]
 max-line-length = 120
 
+# Pytest, see https://docs.pytest.org/en/stable/reference/customize.html#pyproject-toml
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+]
+
 # Coverage, see https://coverage.readthedocs.io/en/latest/config.html
 [tool.coverage.run]
 branch = true
@@ -137,19 +146,6 @@ exclude_lines = [
     "def __repr__",
 ]
 
-[tool.black]
-line-length = 100
-target-version = [
-    "py312",
-]
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 100
-include_trailing_comma = true
-reverse_relative = true
-
 [tool.ruff]
 line-length = 100
 # extend-include = ["*.ipynb"]
@@ -164,6 +160,7 @@ extend-select = [
     "I", # isort
     "UP", # pyupgrade
     "D", # pydocstyle
+    "DOC", # pydoclint
     "B", # bugbear
     "S", # bandit
     "T20", # print
@@ -171,6 +168,7 @@ extend-select = [
     "ERA", # eradicate commented out code
     "NPY", # numpy checks
     "RUF", # ruff rules
+    "C4", # comprehensions
 ]
 ignore = [
     "D105", # Missing docstring in magic method
@@ -179,9 +177,61 @@ ignore = [
 
 # See https://docs.astral.sh/ruff/settings/#per-file-ignores
 [tool.ruff.lint.per-file-ignores]
+# Ignore security issues in the version.py, which are inconsistent
+"src/orcid_downloader/version.py" = ["S603", "S607"]
 # Ignore commented out code in Sphinx configuration file
 "docs/source/conf.py" = ["ERA001"]
-"notebooks/*.ipynb" = ["T201"]
+# Prints are okay in notebooks
+"notebooks/**/*.ipynb" = ["T201"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
+
+[tool.ruff.lint.isort]
+relative-imports-order = "closest-to-furthest"
+known-third-party = [
+    "tqdm",
+]
+known-first-party = [
+    "orcid_downloader",
+    "tests",
+]
+
+[tool.ruff.format]
+# see https://docs.astral.sh/ruff/settings/#format_docstring-code-format
+docstring-code-format = true
+
+[tool.bumpversion]
+current_version = "0.0.8-dev"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)(?:-(?P<release>[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?(?:\\+(?P<build>[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?"
+serialize = [
+    "{major}.{minor}.{patch}-{release}+{build}",
+    "{major}.{minor}.{patch}+{build}",
+    "{major}.{minor}.{patch}-{release}",
+    "{major}.{minor}.{patch}",
+]
+commit = true
+tag = false
+
+[tool.bumpversion.parts.release]
+optional_value = "production"
+first_value = "dev"
+values = [
+    "dev",
+    "production",
+]
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = "version = \"{current_version}\""
+replace = "version = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "docs/source/conf.py"
+search = "release = \"{current_version}\""
+replace = "release = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "src/orcid_downloader/version.py"
+search = "VERSION = \"{current_version}\""
+replace = "VERSION = \"{new_version}\""

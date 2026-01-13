@@ -15,6 +15,15 @@
        }
 """
 
+from collections import Counter
+from collections.abc import Sequence
+from pathlib import Path
+
+import pystow
+import qualo
+from curies import NamableReference
+from tqdm import tqdm
+
 __all__ = [
     "standardize_role",
 ]
@@ -38,489 +47,6 @@ REVERSE_REPLACEMENTS = {
     "Intern": {"Internship", "intern", "Research Intern"},
     "Trainee": {"Trainee", "Estagiário", "Estagiária"},
     "Student": {"Estudiante", "студент", "Estudante"},
-    # Bachelor
-    "Bachelor": {
-        "Graduação",
-        "Bachelors",
-        "Licenciatura",
-        "Bacharel",
-        "Bachiller",
-        "Bachelor's Degree",
-        "Bachelor Degree",
-        "Undergraduate",
-        "Bacharelado",
-        "Bachelor's",
-        "Yüksek Lisans",
-        "S.Pd",
-        "Бакалавр",
-        "Lisans",
-        "LİSANS",
-        "YÜKSEK LİSANS",
-        "Undergraduate degree",
-        "Bachelor’s degree",  # noqa:RUF001
-        "Undergraduation",
-        "Undergraduate student",
-        "Bachalor",
-        "University graduate",
-        "Graduation",
-        "Graduate",
-        "Licenciado",
-        "Graduando",
-        "Degree",
-        "Graduanda",
-        "Licenciada",
-        "Licence",
-        "Graduada",
-        "Pregrado",
-        "Graduado",
-        "Graduated",
-        "Bachlor",
-        "License",
-        "Laurea",
-    },
-    "Bachelor of Science": {
-        "bsc",
-        "bs",
-        "bs c",
-        "bsc candidate",
-        "bsc (honours)",
-        "bsc (honors)",
-        "Bachelors of Science",
-        "Bachelor's of Science",
-        "Bachelor of Science (Honours)",
-        "Bachelor of Science in Nursing",
-        "Bachelor of Science in Biology",
-        "B.S. Biology",
-        "Bachelor in Biology",
-        "B.S. Chemistry",
-        "BSc(Hons)",
-        "Bachelor of Science in Engineering",
-        "BSc Biomedical Science",
-        "Bachelor of Science with Honours",
-        "BSc Psychology",
-        "Licenciatura em Ciências Biológicas",
-        "Licenciada en Psicología",  # spanish
-        "Licenciado en Psicología",  # spanish
-        "Licenciatura en Psicología",
-        "Licenciado en Biología",
-        "Licenciada en Biología",
-        "Licenciatura em Geografia",
-        "Licenciado en Matemáticas",
-        "Bacharel em Psicologia",  # portuguese
-        "Degree in Biology",
-        "BSc Biology",
-        "BSc Biochemistry",
-        "B.S. Biochemistry",
-        "BSc Hons",
-        "BSc Physics",
-        "BSc Chemistry",
-        "Honours Bachelor of Science",
-        "BSc Honours",
-        "BSc (Hons) Psychology",
-        "BSc Computer Science",
-        "B.S. Physics",
-        "BSc Biotechnology",
-        "BS Biochemistry",
-        "BSc Biomedical Sciences",
-        "BSc Biological Sciences",
-        "B.S. Biological Sciences",
-        "BScN",
-        "B.S. Geology",
-        "BSc Mechanical Engineering",
-        "BS Electrical Engineering",
-        "B.S. Neuroscience",
-        "BSc Geology",
-        "BS Chemical Engineering",
-        "BSc Microbiology",
-        "B.S. degree",
-        "BS Computer Science",
-        "B.S. Computer Science",
-        "Bacharel em Ciência da Computação",
-        "B.S. Mechanical Engineering",
-        "BSc Mathematics",
-        "Licenciatura em Matemática",
-        "Licenciatura em Química",
-        "Bacharel em Ciências Biológicas",
-        "Bacharel em Ciências Contábeis",
-    },
-    "Bachelor of Nursing": {
-        "Bacharelado em Enfermagem",
-        "Bacharel em Enfermagem",
-        "Licenciada en Enfermería",
-        "Graduação em Enfermagem",
-    },
-    "Bachelor of Veterinary Science": {"BVSc"},
-    "Bachelor of Pharmacy": {"B.Pharm", "B.Pharmacy", "Bachelor in Pharmacy", "B. Pharmacy"},
-    "Bachelor of Engineering": {"BEng", "B.Eng", "B.Eng."},
-    "Bachelor of Education": {
-        "B.E.",
-        "B.Ed",
-        "B.Ed.",
-        "Bachiller en Educación",
-        "Licenciatura em Pedagogia",
-    },
-    "Bachelor of Architecture": {"B.Arch"},
-    "Bachelor of Arts": {
-        "ba",
-        "BA (Hons)",
-        "A.B.",
-        "Artium Baccalaureus",
-        "Bachelors of Arts",
-        "BA Honours",
-        "Bachelor of Arts (B.A.)",
-        "Bacharel em Administração",  # business administration (portuguese)
-        "BA Hons",
-        "BA Psychology",
-        "Licenciatura em Filosofia",  # degree in philosophy (portuguese)
-        "B.A. Biology",
-        "BA English",
-        "BA Economics",
-        "BA Biology",
-        "Licenciatura em História",
-        "Licenciado en Historia",
-        "Licenciado en Filosofía",
-    },
-    "Bachelor of Law": {"Bacharel em Direito", "Bacharelado em Direito", "Bachelor of Laws"},
-    "Bachelor of Medicine, Bachelor of Surgery": {"MBBS", "MBChB", "MBBCh"},
-    "Bachelor of Technology": {"B.Tech"},
-    "Graduate Student": {"Graduate Assistant", "аспирант"},
-    # Master
-    "Master": {
-        "Masters",
-        "Master Degree",
-        "Master's degree",
-        "Master’s degree",  # noqa:RUF001
-        "Master’s Degree",  # noqa:RUF001
-        "Masters degree",
-        "Master's",
-        "Mestrado",
-        "Mestranda",
-        "Mestrando",
-        "Master Student",
-        "硕士研究生",
-        "Maestría",
-        "магистр",
-        "Master's Student",
-        "Mestra",
-        "Master Degree Candidate",
-        "Tezli Yüksek Lisans",
-        "Diplom",  # German old system
-        "Dipl.-Ing.",
-        "магістр",
-        "Maestria",
-        "Master 2",
-        "Máster",
-        "Maestro",
-    },
-    "Master of Law": {
-        "Master of Laws",
-        "LL.M.",
-        "Mestrado em Direito",
-        "Mestre em Direito",
-    },
-    "Master of Library and Information Science": {"MLIS"},
-    "Master of Business Administration": {"MBA", "Executive MBA"},
-    "Master of Engineering": {"MEng"},
-    "Master of Science": {
-        "msc",
-        "ms",
-        "ms c",
-        "msc candidate",
-        "msc (honours)",
-        "msc (honors)",
-        "Masters of Science",
-        "Master in Science",
-        "M.Si",
-        "Master of Sciences",
-        "Master's of Science",
-        "Master of Science (MSc)",
-        "Master of Science (M.Sc.)",
-        "MSci",
-        "Master Science",
-        "M.Sc.,",
-        "MSc Physics",
-        "MSc Chemistry",
-        "MSc Epidemiology",
-        "M.Sc. Physics",
-        "MSc Biotechnology",
-        "MSc Computer Science",
-        "MSc Health Psychology",
-        "MPhys",
-        "MS Student",
-        "M.S. degree",
-        "MS Biology",
-        "MSc Eng",
-        "MSc student",
-        "MSc Economics",
-        "Maestro en Ciencias",
-        "MChem",
-        "Mestre em Ciências",
-    },
-    "Master of Education": {
-        "me",
-        "Mestrado em Educação",
-        "Mestre em Educação",
-        "Magister en Educación",
-        "M.Ed.",
-        "Maestría en Educación",
-    },
-    "Master of Arts": {"ma", "Masters of Arts", "Master of Art"},
-    "Master of Public Health": {
-        "mph",
-        "Master in Public Health",
-        "Masters of Public Health",
-        "MPH in Epidemiology",
-    },
-    "Master of Applied Science": {"MASc"},
-    "Master of Technology": {"M.Tech"},
-    "Master of Philosophy": {"M.Phil"},
-    "Master of Pharmacy": {"M.Pharm"},
-    "Master of Research": {"MRes"},
-    "Master of Nursing": {"Mestrado em Enfermagem"},
-    "Doctor of Pharmacy": {"PharmD", "Doctor of Pharmacy (PharmD)"},
-    "Doctor of Engineering": {"Doctor of Engineering", "Dr.-Ing.", "Dr. Eng", "Dr.Eng."},
-    "Doctor of Science": {"Doctor of Science", "D.Sc.", "Doctor en Ciencias"},
-    "Doctor of Education": {
-        "Doctor of Education",
-        "Doutorado em Educação",
-        "Doctor en Educación",
-        "Ed.D.",
-        "Doctorado en Educación",
-        "Doctora en Educación",
-        "Doctor en Ciencias de la Educación",
-    },
-    "Doctor of Law": {"J.D.", "Juris Doctor", "Doctor en Derecho", "Doctor of Laws"},
-    "Doctor of Medicine": {
-        "M.D",
-        "Doctor",
-        "Médico",
-        "Medicina",
-        "Doctor of Medicine (MD)",
-        "Medical Doctor",
-        "Doctor en Medicina",
-        "Dr. med.",
-        "Doctora en Medicina",
-        "Medical Doctor (MD)",
-        "Médico Cirujano",
-        "MD Candidate",
-        "Medical Degree",
-        "Medical degree",
-        "Medical Student",
-        "Medico",
-        "Médica",
-        "Graduação em Medicina",
-        "Resident Physician",
-        "Doctor's degree",
-        "Doctor degree",
-        "Doctor Degree",
-        "FRCPC",  # Fellow of the Royal college of physicians of canada
-    },
-    "Doctor of Veterinary Medicine": {
-        "Doctor of Veterinary Medicine",
-        "DVM",
-        "Medicina Veterinária",
-        "Veterinarian",
-    },
-    "Doctor of Philosophy": {
-        "Magister",  # see https://en.wikipedia.org/wiki/Magister_degree
-        "phd",
-        "ph d",
-        "dphil",
-        "phd candidate",
-        "phd researcher",
-        "Dr. phil.",
-        "PhD candidate",
-        "博士研究生",
-        "PhD student",
-        "Doutorado",
-        "Doutoranda",
-        "Doctorate of Philosophy",
-        "Doctorate degree",
-        "Doctoral Degree",
-        "Doctorate",
-        "Doctorant",
-        "Doctora",
-        "Doctorado",
-        "Doutor",
-        "Doctoral",
-        "Doutoramento",
-        "Doutorando",
-        "Doctorando",
-        "Doutora",
-        "Doctoral Student",
-        "Doctoral Researcher",
-        "Dr. rer. nat.",  # technically this is a german doctor of natural science
-        "Dr. rer. nat. (PhD)",
-        "RNDr.",  # czech
-        "Doctor of Philosophy (PhD)",
-        "PhD Scholar",
-        "Doctoral Candidate",
-        "PhD Chemistry",
-        "Doktora",
-        "Doctorat",
-        "PhD Fellow",
-        "PhD degree",
-        "Dr.",
-        "PhD Physics",
-        "PhD Economics",
-        "PhD Computer Science",
-        "PhD in Economics",
-        "PhD in Physics",
-        "PhD in Computer Science",
-        "PhD in Chemistry",
-        "PhD in Biology",
-        "PhD in Psychology",
-        "PhD in Mathematics",
-        "PhD in Neuroscience",
-        "PhD in Education",  # TODO check if this makes sense
-        "PhD in Biochemistry",
-        "Ph.D. in Economics",
-        "PhD in Chemical Engineering",
-        "PhD in Engineering",
-        "PhD in Mechanical Engineering",
-        "PhD in Management",
-        "PhD in Sociology",
-        "PhD Psychology",
-        "PhD in Biomedical Sciences",
-        "PhD in Electrical Engineering",
-        "PhD in Law",  # TODO check if this makes sense
-        "PhD in Medicine",  # TODO
-        "PhD in Civil Engineering",
-        "PhD in History",
-        "PhD in Biomedicine",
-        "PhD Biology",
-        "PhD in Biological Sciences",
-        "PhD in Linguistics",
-        "PhD in Political Science",
-        "PhD in Biotechnology",
-        "PhD in Finance",
-        "Ph.D. in Chemistry",
-        "PhD in Philosophy",
-        "PhD in Biomedical Engineering",
-        "PhD in Statistics",
-        "PhD in Business Administration",
-        "PhD in Microbiology",
-        "PhD Mathematics",
-        "PhD in Science",  # TODO
-        "PhD in Pharmacy",  # TODO
-        "Dr. rer. pol.",  # political science
-        "PhD in Immunology",
-        "PhD in Geography",
-        "PhD in Public Health",
-        "PhD in Health Sciences",
-        "PhD in Molecular Biology",
-        "PhD in Applied Mathematics",
-        "PhD in Organic Chemistry",
-        "PhD in Clinical Psychology",
-        "PhD in Nursing",
-        "PhD in Architecture",
-        "PhD in Applied Linguistics",
-        "PhD in Pharmaceutical Sciences",
-        "PhD in Ecology",
-        "PhD in Genetics",
-        "PhD in Astrophysics",
-        "PhD in Medical Sciences",
-        "PhD in Materials Science",
-        "PhD in Epidemiology",
-        "PhD in Astronomy",
-        "PhD in Accounting",
-        "PhD Civil Engineering",
-        "PhD in Sciences",
-        "PhD in Environmental Engineering",
-        "PhD Management",
-        "PhD in economics",
-        "PhD thesis",
-        "PhD in Industrial Engineering",
-        "PhD (Physics)",
-        "PhD in Marketing",
-        "PhD in Pharmacology",
-        "Doctorate (PhD)",
-        "PhD Immunology",
-        "PhD Geography",
-        "PhD Biomedical Sciences",
-        "PhD Public Health",
-        "PhD Engineering",
-        "PhD in Biochemistry and Molecular Biology",
-        "PhD in Chemical Sciences",
-        "PhD Clinical Psychology",
-        "PhD in physics",
-        "PhD in Social Sciences",
-        "PhD in Theoretical Physics",
-        "PhD Geology",
-        "PhD Environmental Science",
-        "Ph.D. in Management",
-        "MS/PhD",  # cp,nome
-        "M.Sc., Ph.D.",
-        "PhD Thesis",
-        "Ph.D./Dr.",
-        "Ph.D/Dr",
-        "PhD (in progress)",
-        "Ph.D. Chemical Engineering",
-        "PhD in International Relations",
-        "PhD (Economics)",
-        "PhD in Geology",
-        "Doctor of Phylosophy",
-        "Doctor in Chemistry",
-        "Ph.D. in Civil Engineering",
-        "Ph.D. Biochemistry",
-        "Ph.D. in Business Administration",
-        "PhD in Archaeology",
-        "MS/PhD Student",
-        "Doctoral Program",
-        "Ph.D. in Biology",
-        "PhD Biomedical Engineering",
-        "PhD in Physical Chemistry",
-        "PhD Medicine",
-        "PhD Philosophy",
-        "PhD in Neurosciences",
-        "PhD in Environmental Sciences",
-        "PhD (Dr. rer. nat.)",
-        "PhD in Computer Engineering",
-        "PhD in Anthropology",
-        "PhD in Materials Science and Engineering",
-        "Ph.D. Biology",
-        "PhD in Communication",
-        "PhD in chemistry",
-        "PhD in Bioengineering",
-        "Ph.D. in Finance",
-        "PhD in Earth Sciences",
-        "PhD in Molecular Medicine",
-        "PhD in Electrical and Computer Engineering",
-        "Ph.D. in Clinical Psychology",
-        "PhD in Analytical Chemistry",
-        "MPhil/PhD",
-        "PhD Linguistics",
-        "PhD Ecology",
-        "PhD in Environmental Science",
-        "Physics PhD",
-        "PhD in English Literature",
-        "PhD in Philology",
-        "PhD in Information Technology",
-        "Doctor of Philosophy in Mechanical Engineering",
-        "PhD in Materials Engineering",
-        "Ph.D. in Sociology",
-        "Ph.D.",
-        "Ph.D.,",
-        "PhD Neuroscience",
-        "PhD Sociology",
-        "PhD Mechanical Engineering",
-        "PhD studies",
-        "Doktor",
-        "Doctora en Psicología",
-        "Joint PhD",
-        "PhD History",
-        "Doctor (PhD)",
-        "PhD Epidemiology",
-        "PhD (Chemistry)",
-        "PhD Biotechnology",
-        "Doctor en Ciencias Químicas",
-        "Dottorato di Ricerca",
-        "PhD Research Scholar",
-        "PhD Electrical Engineering",
-        "PhD Biological Sciences",
-        "PhD Microbiology",
-        "Doctor en Ciencias Biológicas",
-    },
     "Professor": {
         "professor",
         "Profesora",
@@ -567,7 +93,6 @@ REVERSE_REPLACEMENTS = {
     },
     "Medical Resident": {"residency", "resident"},
     "Nurse": {"Enfermagem", "Enfermeira", "Enfermera"},
-    "Medical Doctor and Doctor of Philosophy": {"MD, PhD", "MD/PhD", "MD PhD", "MD/PhD Candidate"},
     "Researcher": {
         "Research Fellow",
         "Research Scientist",
@@ -667,39 +192,103 @@ REVERSE_REPLACEMENTS = {
 for k in REVERSE_REPLACEMENTS:
     REVERSE_REPLACEMENTS[k].add(_norm(k))
 
-REPLACEMENTS = {_norm(value): k for k, values in REVERSE_REPLACEMENTS.items() for value in values}
+REPLACEMENTS: dict[str, str] = {
+    _norm(value): k for k, values in REVERSE_REPLACEMENTS.items() for value in values
+}
+
+#: contains all roles
+ROLE_COUNTER_1: Counter[str] = Counter()
+
+#: contains roles that should be immediately curated as part of qualo
+ROLE_COUNTER_2: Counter[str] = Counter()
 
 
-def standardize_role(role: str) -> tuple[str, bool]:
+def standardize_role(  # noqa:C901
+    role: str,
+) -> tuple[NamableReference, bool] | tuple[str, bool]:
     """Standardize a role string."""
-    role = role.strip()
+    role = role.strip().replace("\t", " ").replace("  ", " ")
 
     role = role.removeprefix("Visiting ")
     role = role.removeprefix("Junior ")
     role = role.removeprefix("Senior ")
-    role = role.removesuffix("(Honors)")
-    role = role.removesuffix("(Honours)")
-    role = role.removesuffix("(Hons)")
 
     role = role.strip()
+
+    reference = qualo.ground(role)
+    if reference is not None:
+        return reference, True
 
     role_norm = _norm(role)
     if role_norm in REPLACEMENTS:
         return REPLACEMENTS[role_norm], True
 
+    ROLE_COUNTER_1[role] += 1
+
     for splits in [" in ", " of "]:
-        if splits in role:
-            beginning = _norm(role.split(splits, 2)[0])
-            if beginning in REPLACEMENTS:
-                return REPLACEMENTS[beginning], True
+        if splits not in role:
+            continue
+        x = role.split(splits, 2)[0]
+        reference = qualo.ground(x)
+        if reference is not None:
+            # TODO get rid of this - everything in here should get curated
+            ROLE_COUNTER_2[role] += 1
+            return reference, True
+        y = _norm(x)
+        if y in REPLACEMENTS:
+            return REPLACEMENTS[y], True
 
     if role_norm.startswith("bscin") or role_norm.startswith("bsc "):
+        # TODO get rid of this - everything in here should get curated
+        ROLE_COUNTER_2[role] += 1
         return "Bachelor of Science", True
     if role_norm.startswith("mscin") or role_norm.startswith("msc "):
+        # TODO get rid of this - everything in here should get curated
+        ROLE_COUNTER_2[role] += 1
         return "Master of Science", True
     if role_norm.startswith("main") or role_norm.startswith("ma "):
+        # TODO get rid of this - everything in here should get curated
+        ROLE_COUNTER_2[role] += 1
         return "Master of Arts", True
     if role_norm.startswith("phdin") or role_norm.startswith("phd student in "):
+        # TODO get rid of this - everything in here should get curated
+        ROLE_COUNTER_2[role] += 1
         return "Doctor of Philosophy", True
 
     return role, False
+
+
+def write_role_counters() -> None:
+    """Write summaries over all roles,a nd the highest."""
+    write_counter(ROLE_COUNTER_1, pystow.join("orcid", name="roles_all.tsv"))
+    write_counter(ROLE_COUNTER_2, pystow.join("orcid", name="roles_curate_first.tsv"))
+
+
+def write_counter(
+    counter: Counter[str] | Counter[tuple[str, ...]],
+    path: str | Path,
+    sep: str | None = None,
+    header: Sequence[str] | None = None,
+) -> None:
+    """Write a counter."""
+    path = Path(path).expanduser().resolve()
+    tqdm.write(f"Writing to {path}")
+    if sep is None:
+        sep = "\t"
+    key_values = counter.most_common()
+    if not key_values:
+        return None
+    with path.open("w") as file:
+        if isinstance(key_values[0][0], tuple):
+            if header is None:
+                pp = (f"key_{i + 1}" for i in range(len(key_values[0][0])))
+                header = (*pp, "count")
+            print(*header, sep=sep, file=file)
+            for key, value in key_values:
+                print(*key, value, sep=sep, file=file)
+        else:
+            if header is None:
+                header = "key", "count"
+            print(*header, sep=sep, file=file)
+            for key, value in key_values:
+                print(key, value, sep=sep, file=file)

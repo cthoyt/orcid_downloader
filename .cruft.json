@@ -1,6 +1,6 @@
 {
   "template": "https://github.com/cthoyt/cookiecutter-snekpack",
-  "commit": "3a6e550e03deebcfafc9d44aa4af72672bf2154c",
+  "commit": "0fe3ed79c9dd15e6434e18f9dec098c4e39c7dbf",
   "checkout": null,
   "context": {
     "cookiecutter": {
@@ -13,6 +13,11 @@
       "github_repository_name": "orcid_downloader",
       "command_line_interface": false,
       "gitlab": false,
+      "runner": "tox",
+      "__runner": "tox -e",
+      "__runner_uv": "--with tox-uv tox -e",
+      "__runner_pip": "tox tox-uv",
+      "__runner_tests": "py",
       "__gh_slug": "cthoyt/orcid_downloader",
       "_template": "https://github.com/cthoyt/cookiecutter-snekpack"
     }

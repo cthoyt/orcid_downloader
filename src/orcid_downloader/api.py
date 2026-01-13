@@ -815,7 +815,7 @@ def _get_works(tree: Element, orcid: str) -> list[dict[str, str | None]]:
     ):
         title: str | None = work.findtext(".//work:title/common:title", namespaces=NAMESPACES)
         if title:
-            title = title.replace(" ", " ")
+            title = title.replace(" ", " ")  # noqa:RUF001
             title = title.strip().rstrip(".").strip().replace("\n", " ")
             title = DUB_WS.sub(" ", title)
 

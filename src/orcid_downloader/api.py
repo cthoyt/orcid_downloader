@@ -698,6 +698,7 @@ def _get_external_identifiers(tree: Element, orcid: str) -> tuple[dict[str, str]
         elif url.startswith("tools.wmflabs.org/scholia/author/"):
             rv["wikidata"] = url.removeprefix("tools.wmflabs.org/scholia/author/")
         elif "linkedin.com/in/" in url:  # multiple languages subdomains, so startswith doesn't work
+            # TODO strip off /?originalSubdomain=nz
             rv["linkedin"] = unquote(url.rstrip("/").split("linkedin.com/in/")[1])
         elif "scholar.google" in url:
             parsed_url = urlparse(url)
@@ -707,7 +708,9 @@ def _get_external_identifiers(tree: Element, orcid: str) -> tuple[dict[str, str]
         elif url.startswith("publons.com/author/"):
             rv["publons.researcher"] = url.removeprefix("publons.com/author/").split("/")[0]
         elif url.startswith("www.researchgate.net/profile/"):
-            rv["researchgate.profile"] = url.removeprefix("www.researchgate.net/profile/")
+            rv["researchgate.profile"] = url.removeprefix("www.researchgate.net/profile/").split(
+                "/"
+            )[0]
         elif url.startswith("www.scopus.com/authid/detail.uri?authorId="):
             rv["scopus"] = url.removeprefix("www.scopus.com/authid/detail.uri?authorId=")
         elif url.startswith("www.webofscience.com/wos/author/record/"):

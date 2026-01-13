@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+from itertools import chain
 
 import pyobo
 import ssslm
@@ -97,6 +98,7 @@ def write_owl_rdf(  # noqa:C901
     ror_id_to_name = pyobo.get_id_name_mapping("ror", version=ror_version)
     ror_id_to_name = {k: v.replace('"', '\\"') for k, v in ror_id_to_name.items()}
     ror_written: set[str] = set()
+    pmid_written: set[str] = set()
 
     with gzip.open(path, "wt") as file:
         file.write(PREAMBLE + "\n")
@@ -109,6 +111,7 @@ def write_owl_rdf(  # noqa:C901
             if not record.name:
                 continue
             ror_parts = []
+            article_parts = []
             parts = ["a h:", f'l: "{record.name}"']
             for alias in record.aliases:
                 parts.append(f's: "{alias}"')
@@ -153,8 +156,14 @@ def write_owl_rdf(  # noqa:C901
             for keyword in sorted(record.keywords):
                 parts.append(f'"k: "{keyword}"')
             for work in record.works:
+                if work.pubmed not in pmid_written:
+                    if work.title:
+                        article_parts.append(f'pmid:{work.pubmed} a ja:; l: "{work.title}" .')
+                    else:
+                        article_parts.append(f"pmid:{work.pubmed} a ja:.")
+                    pmid_written.add(work.pubmed)
                 parts.append(f"p: pmid:{work.pubmed}")
-            for part in ror_parts:
+            for part in chain(ror_parts, article_parts):
                 file.write(f"{part}\n")
             file.write(f"o:{record.orcid} " + "; ".join(parts) + " .\n")
 

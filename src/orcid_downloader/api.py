@@ -244,6 +244,7 @@ class Work(BaseModel):
     """A model representing a creative work."""
 
     pubmed: str = Field(..., title="PubMed identifier")
+    title: str | None = None
 
 
 class Date(BaseModel):

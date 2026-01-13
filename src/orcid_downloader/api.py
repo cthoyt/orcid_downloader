@@ -538,14 +538,17 @@ def _process_file(  # noqa:C901
 
     family_name = tree.findtext(".//personal-details:family-name", namespaces=NAMESPACES)
     given_names = tree.findtext(".//personal-details:given-names", namespaces=NAMESPACES)
-    if family_name and given_names:
+    if family_name and given_names and not given_names[0].isdigit():
         label_name = clean_name(f"{given_names.strip()} {family_name.strip()}")
     else:
         label_name = None
 
     credit_name = tree.findtext(".//personal-details:credit-name", namespaces=NAMESPACES)
     if credit_name:
-        credit_name = clean_name(credit_name)
+        if credit_name[0].isdigit():
+            credit_name = None
+        else:
+            credit_name = clean_name(credit_name)
 
     if not credit_name and not label_name:
         # Skip records that don't have any kinds of labels
@@ -610,13 +613,16 @@ def _process_file(  # noqa:C901
     return Record.model_validate(record)
 
 
+MAXIMUM_ALIAS_LENGTH = 60
+
+
 def _iter_other_names(t: Element) -> Iterable[str]:
     for part in t.findall(".//other-name:content", namespaces=NAMESPACES):
         if not part.text:
             continue
         for z in part.text.strip().split(";"):
             z = z.strip()
-            if z and " " in z and len(z) < 60:
+            if z and " " in z and len(z) < MAXIMUM_ALIAS_LENGTH and not z[0].isdigit():
                 yield clean_name(z.strip())
 
 

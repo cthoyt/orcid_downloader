@@ -763,7 +763,7 @@ def _get_emails(tree: Element) -> list[str]:
     ]
 
 
-def _get_keywords(tree: Element) -> Iterable[str]:
+def _get_keywords(tree: Element) -> list[str]:
     return [
         keyword.text.strip()
         for keyword in tree.findall(

@@ -24,6 +24,7 @@ PREAMBLE = """\
 
 @prefix o: <https://orcid.org/> .
 @prefix r: <https://ror.org/> .
+@prefix pmid: <https://pubmed.ncbi.nlm.nih.gov/> .
 @prefix h: <http://purl.obolibrary.org/obo/NCBITaxon_9606> .
 @prefix g: <http://purl.obolibrary.org/obo/OBI_0000245> .
 @prefix s: <http://www.geneontology.org/formats/oboInOwl#hasExactSynonym> .
@@ -36,6 +37,7 @@ PREAMBLE = """\
 @prefix mb: <http://xmlns.com/foaf/0.1/mbox> .
 @prefix db: <http://xmlns.com/foaf/0.1/depicted_by> .
 @prefix k: <https://schema.org/keywords> .
+@prefix p: <https://schema.org/author> .
 
 <https://w3id.org/biopragmatics/resources/orcid.ttl> a owl:Ontology ;
     owl:versionInfo "2023"^^xsd:string ;
@@ -150,6 +152,8 @@ def write_owl_rdf(  # noqa:C901
                 parts.append(f"hp: <{record.homepage}>")
             for keyword in sorted(record.keywords):
                 parts.append(f'"k: "{keyword}"')
+            for work in record.works:
+                parts.append(f"p: pmid:{work.pubmed}")
             for part in ror_parts:
                 file.write(f"{part}\n")
             file.write(f"o:{record.orcid} " + "; ".join(parts) + " .\n")

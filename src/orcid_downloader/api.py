@@ -419,7 +419,6 @@ def iter_records(  # noqa:C901
                 yield Record.model_validate_json(line)
 
     else:
-        raise RuntimeError(f"no cached records found in {records_path}")
         from orcid_downloader.wikidata import get_orcid_to_commons_image, get_orcid_to_wikidata
 
         if ror_grounder is None:

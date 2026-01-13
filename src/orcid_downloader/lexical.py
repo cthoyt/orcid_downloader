@@ -9,7 +9,7 @@ from contextlib import closing
 from functools import lru_cache
 from itertools import batched
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import gilda
 import pandas as pd
@@ -51,14 +51,14 @@ def _get_orcid_grounder_helper(path: str | Path) -> ssslm.Grounder:
     return ExtendedMatcher(gilda_grounder)
 
 
-class NonIndexingGildaGrounder(gilda.Grounder):
+class NonIndexingGildaGrounder(gilda.Grounder):  # type:ignore[misc]
     """A custom grounder for ORCID."""
 
     def _build_prefix_index(self) -> None:
         pass  # override building this to save 60 seconds on startup
 
 
-class UngroupedSqliteEntries(SqliteEntries, dict):
+class UngroupedSqliteEntries(SqliteEntries, dict):  # type:ignore[misc]
     """An interface to the SQLite lexical index compatible with Gilda."""
 
     def get(self, key: str, default: list[gilda.Term] | None = None) -> list[gilda.Term] | None:  # type:ignore[override]
@@ -78,7 +78,7 @@ class UngroupedSqliteEntries(SqliteEntries, dict):
     def __len__(self) -> int:
         """Get the number of unique keys in the lexical index."""
         res = self.get_connection().execute("SELECT COUNT(DISTINCT norm_text) FROM terms")
-        return res.fetchone()[0]
+        return cast(int, res.fetchone()[0])
 
     def __iter__(self) -> Iterator[gilda.Term]:
         """Iterate over the keys in the lexical index."""

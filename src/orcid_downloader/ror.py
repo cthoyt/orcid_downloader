@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 
-class RORGrounder(gilda.Grounder):
+class RORGrounder(gilda.Grounder):  # type:ignore[misc]
     """A grounder for organizations based on ROR."""
 
     def ground(

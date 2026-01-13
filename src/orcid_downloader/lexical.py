@@ -58,7 +58,7 @@ class NonIndexingGildaGrounder(gilda.Grounder):  # type:ignore[misc]
         pass  # override building this to save 60 seconds on startup
 
 
-class UngroupedSqliteEntries(SqliteEntries, dict):  # type:ignore[misc]
+class UngroupedSqliteEntries(SqliteEntries, dict):  # type:ignore[misc,type-arg]
     """An interface to the SQLite lexical index compatible with Gilda."""
 
     def get(self, key: str, default: list[gilda.Term] | None = None) -> list[gilda.Term] | None:  # type:ignore[override]

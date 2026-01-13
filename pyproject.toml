@@ -61,7 +61,7 @@ tests = [
     "coverage",
 ]
 process = [
-    "pyobo>=0.12.14",
+    "pyobo>=0.12.15",
     "ssslm[gilda-slim]",
     "gilda-slim>=1.4.1.1",
     "tabulate",

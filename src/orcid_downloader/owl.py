@@ -35,7 +35,7 @@ PREAMBLE = """\
 @prefix lattes: <https://lattes.cnpq.br/> .
 @prefix github: <https://github.com/> .
 @prefix kaken: <https://nrid.nii.ac.jp/ja/nrid/> .
-@prefix gnd: < 	https://d-nb.info/gnd/> .
+@prefix gnd: <https://d-nb.info/gnd/> .
 @prefix dialnet.author: <https://dialnet.unirioja.es/servlet/autor?codigo=> .
 @prefix isni: <http://www.isni.org/isni/> .
 @prefix authenticus: <https://www.authenticus.pt/> .

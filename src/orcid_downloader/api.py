@@ -539,13 +539,13 @@ def _process_file(  # noqa:C901
     family_name = tree.findtext(".//personal-details:family-name", namespaces=NAMESPACES)
     given_names = tree.findtext(".//personal-details:given-names", namespaces=NAMESPACES)
     if family_name and given_names:
-        label_name = f"{given_names.strip()} {family_name.strip()}"
+        label_name = clean_name(f"{given_names.strip()} {family_name.strip()}")
     else:
         label_name = None
 
     credit_name = tree.findtext(".//personal-details:credit-name", namespaces=NAMESPACES)
     if credit_name:
-        credit_name = credit_name.strip()
+        credit_name = clean_name(credit_name)
 
     if not credit_name and not label_name:
         # Skip records that don't have any kinds of labels
@@ -559,7 +559,6 @@ def _process_file(  # noqa:C901
         if label_name is not None:
             aliases.add(label_name)
 
-    name = name and clean_name(name)
     aliases.update(_iter_other_names(tree))
     if name in aliases:  # make sure there's no duplicate
         aliases.remove(name)
@@ -801,10 +800,12 @@ def _get_countries(tree: Element, orcid: str) -> list[str]:
 
 
 def _get_locale(tree: Element, orcid: str) -> str | None:
-    value = tree.findtext(".//preferences:preferences/preferences:locale", namespaces=NAMESPACES)
-    if value is None:
+    locale_value = tree.findtext(
+        ".//preferences:preferences/preferences:locale", namespaces=NAMESPACES
+    )
+    if locale_value is None:
         return None
-    return value.strip()
+    return locale_value.strip()
 
 
 def _get_works(tree: Element, orcid: str) -> list[dict[str, str | None]]:
@@ -814,6 +815,7 @@ def _get_works(tree: Element, orcid: str) -> list[dict[str, str | None]]:
     ):
         title: str | None = work.findtext(".//work:title/common:title", namespaces=NAMESPACES)
         if title:
+            title = title.replace(" ", " ")
             title = title.strip().rstrip(".").strip().replace("\n", " ")
             title = DUB_WS.sub(" ", title)
 

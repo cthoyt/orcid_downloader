@@ -6,6 +6,7 @@ from pathlib import Path
 import ssslm
 
 from orcid_downloader.api import _process_file
+from orcid_downloader.name_utils import clean_name
 
 HERE = Path(__file__).parent.resolve()
 EXAMPLE_PATH = HERE.joinpath("example.xml")
@@ -32,3 +33,8 @@ class TestParse(unittest.TestCase):
             ),
             msg=f"works:\n\n{res.works}",
         )
+
+    def test_clean_names(self) -> None:
+        """Test cleaning names."""
+        self.assertEqual("Francess Dufie Azumah", clean_name("Francess Dufie Azumah (DR.)"))
+        self.assertEqual("Girjesh Shukla", clean_name("(Dr.) Girjesh Shukla"))

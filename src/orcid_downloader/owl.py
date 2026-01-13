@@ -111,7 +111,7 @@ def write_owl_rdf(  # noqa:C901
             for alias in record.aliases:
                 parts.append(f's: "{alias}"')
             for prefix, value in sorted(record.xrefs.items()):
-                parts.append(f'x: "{prefix}:{value}"')
+                parts.append(f"x: {prefix}:{value}")
             if record.commons_image:
                 parts.append(f"db: <{record.commons_image_url}>")
             for org in record.employments:

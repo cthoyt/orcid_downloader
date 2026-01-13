@@ -39,6 +39,7 @@ PREAMBLE = """\
 @prefix db: <http://xmlns.com/foaf/0.1/depicted_by> .
 @prefix k: <https://schema.org/keywords> .
 @prefix p: <https://schema.org/author> .
+@prefix ja: <http://purl.obolibrary.org/obo/IAO_0000013> .
 
 <https://w3id.org/biopragmatics/resources/orcid.ttl> a owl:Ontology ;
     owl:versionInfo "2023"^^xsd:string ;

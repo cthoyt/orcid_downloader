@@ -155,7 +155,7 @@ def write_owl_rdf(  # noqa:C901
             if record.homepage:
                 parts.append(f"hp: <{record.homepage}>")
             for keyword in sorted(record.keywords):
-                parts.append(f'"k: "{keyword}"')
+                parts.append(f'k: "{keyword}"')
             for work in record.works:
                 if work.pubmed not in pmid_written:
                     if work.title:

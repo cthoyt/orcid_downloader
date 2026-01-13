@@ -1,5 +1,7 @@
 """A command line interface for orcid-downloader."""
 
+from __future__ import annotations
+
 import time
 
 import click
@@ -19,8 +21,13 @@ __all__ = ["main"]
 
 @click.command()
 @click.option("--test", is_flag=True)
-def main(test: bool) -> None:
+@click.option("--ror-version")
+def main(test: bool, ror_version: str | None) -> None:
     """Process ORCID."""
+    from .ror import get_ror_grounder
+
+    ror_grounder = get_ror_grounder(version=ror_version)
+
     if test:
         version_info = VersionInfo(
             version=VERSION_DEFAULT.version,
@@ -29,11 +36,15 @@ def main(test: bool) -> None:
             size=VERSION_DEFAULT.size,
             output_directory_name="output-test",
         )
-        list(iter_records(force=True, version_info=version_info, head=10_000))
+        list(
+            iter_records(
+                force=True, version_info=version_info, head=10_000, ror_grounder=ror_grounder
+            )
+        )
     else:
         version_info = VERSION_DEFAULT
 
-    click.echo(f"Using version: {version_info}")
+    click.echo(f"Using ORCiD version: {version_info}")
 
     from .lexical import write_lexical, write_lexical_sqlite
     from .owl import write_owl_rdf
@@ -44,19 +55,21 @@ def main(test: bool) -> None:
     write_schema(schema_path)
 
     click.echo("Writing summaries")
-    write_summaries(version_info=version_info, force=not test)
+    write_summaries(version_info=version_info, force=False, ror_grounder=ror_grounder)
 
     click.echo("Writing SQLite")
-    write_sqlite(version_info=version_info, force=False)
+    write_sqlite(version_info=version_info, force=False, ror_grounder=ror_grounder)
 
     click.echo("Writing OWL")
-    write_owl_rdf(version_info=version_info, force=False)
+    write_owl_rdf(
+        version_info=version_info, force=False, ror_grounder=ror_grounder, ror_version=ror_version
+    )
 
     click.echo("Generating SSSLM TSV (~30 min)")
-    write_lexical(version_info=version_info, force=False)
+    write_lexical(version_info=version_info, force=False, ror_grounder=ror_grounder)
 
     click.echo("Generating SQLite lexical index (~30 min)")
-    write_lexical_sqlite(version_info=version_info, force=False)
+    write_lexical_sqlite(version_info=version_info, force=False, ror_grounder=ror_grounder)
 
     # Test grounding
     x = time.time()

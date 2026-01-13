@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 
-class RORGrounder(gilda.Grounder):
+class RORGrounder(gilda.Grounder):  # type:ignore[misc]
     """A grounder for organizations based on ROR."""
 
     def ground(
@@ -23,7 +23,7 @@ class RORGrounder(gilda.Grounder):
         context: str | None = None,
         organisms: list[str] | None = None,
         namespaces: list[str] | None = None,
-    ):
+    ) -> list[gilda.ScoredMatch]:
         """Ground an organization, and fallback with optional preprocessing."""
         if scored_matches := super().ground(
             text,
@@ -31,10 +31,10 @@ class RORGrounder(gilda.Grounder):
             organisms=organisms,
             namespaces=namespaces,
         ):
-            return scored_matches
+            return scored_matches  # type:ignore[no-any-return]
 
         norm_str = text.removeprefix("The ").replace(",", "")
-        return super().ground(
+        return super().ground(  # type:ignore[no-any-return]
             norm_str,
             context=context,
             organisms=organisms,
@@ -43,6 +43,6 @@ class RORGrounder(gilda.Grounder):
 
 
 @lru_cache(1)
-def get_ror_grounder() -> ssslm.Grounder:
+def get_ror_grounder(version: str | None = None) -> ssslm.Grounder:
     """Get a grounder for ROR."""
-    return pyobo.get_grounder("ror", grounder_cls=RORGrounder, progress=False)
+    return pyobo.get_grounder("ror", grounder_cls=RORGrounder, force_process=False, version=version)

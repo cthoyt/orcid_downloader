@@ -52,6 +52,7 @@ dependencies = [
     "semantic_pydantic",
     "bioregistry>=0.11.13",
     "qualo>=0.0.2",
+    "wikidata_client",
 ]
 
 [project.optional-dependencies]
@@ -60,7 +61,7 @@ tests = [
     "coverage",
 ]
 process = [
-    "pyobo",
+    "pyobo>=0.12.15",
     "ssslm[gilda-slim]",
     "gilda-slim>=1.4.1.1",
     "tabulate",

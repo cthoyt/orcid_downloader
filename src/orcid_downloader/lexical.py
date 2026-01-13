@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from contextlib import closing
 from functools import lru_cache
 from itertools import batched
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import gilda
 import pandas as pd
@@ -31,10 +31,15 @@ __all__ = [
 ]
 
 
-def get_orcid_grounder(version_info: VersionInfo | None = None) -> ssslm.Grounder:
-    """Get a grounder object for ORCID."""
+def _get_database_path(version_info: VersionInfo | None = None) -> Path:
     module = _get_output_module(version_info)
     path = module.join(name="orcid-gilda.db")
+    return path
+
+
+def get_orcid_grounder(version_info: VersionInfo | None = None) -> ssslm.Grounder:
+    """Get a grounder object for ORCID."""
+    path = _get_database_path(version_info)
     return _get_orcid_grounder_helper(path)
 
 
@@ -46,52 +51,48 @@ def _get_orcid_grounder_helper(path: str | Path) -> ssslm.Grounder:
     return ExtendedMatcher(gilda_grounder)
 
 
-class NonIndexingGildaGrounder(gilda.Grounder):
+class NonIndexingGildaGrounder(gilda.Grounder):  # type:ignore[misc]
     """A custom grounder for ORCID."""
 
     def _build_prefix_index(self) -> None:
         pass  # override building this to save 60 seconds on startup
 
 
-class UngroupedSqliteEntries(SqliteEntries, dict):
+class UngroupedSqliteEntries(SqliteEntries, dict):  # type:ignore[misc,type-arg]
     """An interface to the SQLite lexical index compatible with Gilda."""
 
-    def get(self, key, default=None):
+    def get(self, key: str, default: list[gilda.Term] | None = None) -> list[gilda.Term] | None:  # type:ignore[override]
         """Get a term from the lexical index."""
-        with sqlite3.connect(self.db) as conn:
-            res = conn.execute("SELECT term FROM terms WHERE norm_text=?", (key,))
-            terms = res.fetchall()
-            if not terms:
-                return default
-            return [gilda.Term(**json.loads(term)) for (term,) in terms]
+        res = self.get_connection().execute("SELECT term FROM terms WHERE norm_text=?", (key,))
+        terms = res.fetchall()
+        if not terms:
+            return default
+        return [gilda.Term(**json.loads(term)) for (term,) in terms]
 
-    def values(self):
+    def values(self) -> Iterable[gilda.Term]:  # type:ignore[override]
         """Iterate over the terms in the lexical index."""
-        with sqlite3.connect(self.db) as conn:
-            res = conn.execute("SELECT term FROM terms")
-            for (result,) in res.fetchall():
-                yield gilda.Term(**json.loads(result))
+        res = self.get_connection().execute("SELECT term FROM terms")
+        for (result,) in res.fetchall():
+            yield gilda.Term(**json.loads(result))
 
     def __len__(self) -> int:
         """Get the number of unique keys in the lexical index."""
-        with sqlite3.connect(self.db) as conn:
-            res = conn.execute("SELECT COUNT(DISTINCT norm_text) FROM terms")
-            return res.fetchone()[0]
+        res = self.get_connection().execute("SELECT COUNT(DISTINCT norm_text) FROM terms")
+        return cast(int, res.fetchone()[0])
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[gilda.Term]:
         """Iterate over the keys in the lexical index."""
-        with sqlite3.connect(self.db) as conn:
-            res = conn.execute("SELECT DISTINCT norm_text FROM terms")
-            for (norm_text,) in tqdm(
-                res.fetchall(), desc="Iterating over lexical index", unit_scale=True
-            ):
-                yield norm_text
+        res = self.get_connection().execute("SELECT DISTINCT norm_text FROM terms")
+        for (norm_text,) in tqdm(
+            res.fetchall(), desc="Iterating over lexical index", unit_scale=True
+        ):
+            yield norm_text
 
 
 class ExtendedMatcher(ssslm.GildaGrounder):
     """A matcher that had an alternate text generator function."""
 
-    def get_matches(self, text, **kwargs: Any) -> list[ssslm.Match]:
+    def get_matches(self, text, **kwargs: Any) -> list[ssslm.Match]:  # type:ignore
         """Ground a string to a researcher, also trying synonym generation during lookup."""
         if matches := super().get_matches(text, **kwargs):
             return matches
@@ -101,14 +102,31 @@ class ExtendedMatcher(ssslm.GildaGrounder):
         return []
 
 
-def write_lexical_sqlite(*, version_info: VersionInfo | None = None, force: bool = False) -> None:
+def write_lexical_sqlite(
+    *,
+    version_info: VersionInfo | None = None,
+    force: bool = False,
+    ror_grounder: ssslm.Grounder | None,
+) -> None:
+    """Build a SQLite database file from a set of grounding entries."""
+    path = _get_output_module(version_info).join(name="orcid-gilda.db")
+    if path.is_file():
+        path.unlink()
+    _write_lexical_sqlite(
+        path=path,
+        records=iter_records(
+            desc="Writing SQLite index",
+            version_info=version_info,
+            force=force,
+            ror_grounder=ror_grounder,
+        ),
+    )
+
+
+def _write_lexical_sqlite(path: Path, records: Iterable[Record]) -> None:
     """Build a SQLite database file from a set of grounding entries."""
     from gilda.process import normalize
 
-    path = _get_output_module(version_info).join(name="orcid-gilda.db")
-
-    if path.is_file():
-        path.unlink()
     with sqlite3.connect(path) as conn:
         with closing(conn.cursor()) as cur:
             # Create the table
@@ -117,9 +135,7 @@ def write_lexical_sqlite(*, version_info: VersionInfo | None = None, force: bool
 
         rows = (
             (term.norm_text, json.dumps(term.to_json()))
-            for record in iter_records(
-                desc="Writing SQLite index", version_info=version_info, force=force
-            )
+            for record in records
             if record.name
             for literal_mapping in _record_to_literal_mappings(record)
             # TODO upstream this so no term gets constructed if it doesn't have text
@@ -137,7 +153,12 @@ def write_lexical_sqlite(*, version_info: VersionInfo | None = None, force: bool
             cur.execute(q)
 
 
-def write_lexical(*, version_info: VersionInfo | None = None, force: bool = False) -> None:
+def write_lexical(
+    *,
+    version_info: VersionInfo | None = None,
+    force: bool = False,
+    ror_grounder: ssslm.Grounder | None,
+) -> None:
     """Write SSSLM."""
     module = _get_output_module(version_info)
     lq_path = module.join(name="orcid.lq.ssslm.tsv.gz")
@@ -147,7 +168,9 @@ def write_lexical(*, version_info: VersionInfo | None = None, force: bool = Fals
     with safe_open_writer(lq_path) as lq_writer, safe_open_writer(hq_path) as hq_writer:
         lq_writer.writerow(LiteralMappingTuple._fields)
         hq_writer.writerow(LiteralMappingTuple._fields)
-        for record in iter_records(desc="Writing SSSLM", version_info=version_info, force=force):
+        for record in iter_records(
+            desc="Writing SSSLM", version_info=version_info, force=force, ror_grounder=ror_grounder
+        ):
             if not record.name:
                 continue
             is_hq = record.is_high_quality()

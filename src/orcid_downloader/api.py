@@ -9,17 +9,17 @@ import logging
 import tarfile
 import typing
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Annotated, Any, TextIO
 from urllib.parse import parse_qs, unquote, urlparse
 
 import bioregistry
 import pystow
 import ssslm
-from curies import NamedReference
+from curies import NamableReference
 from lxml import etree
 from pydantic import BaseModel, Field
 from pydantic_extra_types.country import CountryAlpha2, _index_by_alpha2
@@ -29,6 +29,9 @@ from tqdm.auto import tqdm
 
 from orcid_downloader.name_utils import clean_name, reconcile_aliases
 from orcid_downloader.standardize import standardize_role, write_role_counters
+
+if TYPE_CHECKING:
+    from xml.etree.ElementTree import Element, ElementTree
 
 __all__ = [
     "Record",
@@ -82,10 +85,18 @@ VERSION_2024 = VersionInfo(
     version="2024",
     url="https://orcid.figshare.com/ndownloader/files/49560102",
     fname="ORCID_2024_10_summaries.tar.gz",
-    size=18_600_000,  # FIXME
+    size=18_600_000,  # FIXME this is the number of records
 )
 
-VERSION_DEFAULT = VERSION_2023
+#: See https://orcid.figshare.com/articles/dataset/ORCID_Public_Data_File_2025/30375589
+VERSION_2025 = VersionInfo(
+    version="2025",
+    url="https://orcid.figshare.com/ndownloader/files/58834837",
+    fname="ORCID_2025_10_summaries.tar.gz",
+    size=26_200_000,
+)
+
+VERSION_DEFAULT = VERSION_2025
 
 NAMESPACES = {
     "personal-details": "http://www.orcid.org/ns/personal-details",
@@ -116,7 +127,7 @@ def _get_output_module(version_info: VersionInfo | None = None) -> pystow.Module
     return version_info.output_module
 
 
-def _norm_key(id_type):
+def _norm_key(id_type: str) -> str:
     return id_type.lower().replace(" ", "").rstrip(":")
 
 
@@ -249,7 +260,7 @@ class Affiliation(BaseModel):
     name: str
     start: Date | None = Field(None, title="Start Year")
     end: Date | None = Field(None, title="End Year")
-    role: None | str | NamedReference = None
+    role: None | str | NamableReference = None
     xrefs: dict[str, str] = Field(default_factory=dict, title="Database Cross-references")
 
     # xrefs includes ror, ringgold, grid, funderregistry, lei
@@ -264,7 +275,7 @@ class Affiliation(BaseModel):
 class Record(BaseModel):
     """A model representing a person."""
 
-    orcid: str = SemanticField(..., prefix="orcid")
+    orcid: Annotated[str, SemanticField(..., prefix="orcid")]
     name: str = Field(..., min_length=1)
     homepage: str | None = Field(None)
     locale: str | None = Field(None)
@@ -372,22 +383,26 @@ class Record(BaseModel):
         return None
 
 
-def _iter_tarfile_members(path: Path):
+def _iter_tarfile_members(path: Path) -> Iterable[typing.IO[bytes]]:
     tar_file = tarfile.open(path)
     while member := tar_file.next():
         if not member.name.endswith(".xml"):
             continue
-        yield tar_file.extractfile(member)
+        yv = tar_file.extractfile(member)
+        if yv is None:
+            continue
+        yield yv
     tar_file.close()
 
 
-def iter_records(
+def iter_records(  # noqa:C901
     *,
     force: bool = False,
     records_path: Path | None = None,
     desc: str = "Loading ORCID",
     head: int | None = None,
     version_info: VersionInfo | None,
+    ror_grounder: ssslm.Grounder | None,
 ) -> Iterable[Record]:
     """Parse ORCID summary XML files, takes about an hour."""
     if version_info is None:
@@ -404,11 +419,14 @@ def iter_records(
                 yield Record.model_validate_json(line)
 
     else:
-        from orcid_downloader.ror import get_ror_grounder
         from orcid_downloader.wikidata import get_orcid_to_commons_image, get_orcid_to_wikidata
 
-        tqdm.write("getting ROR grounder")
-        ror_grounder = get_ror_grounder()
+        if ror_grounder is None:
+            from orcid_downloader.ror import get_ror_grounder
+
+            tqdm.write("getting ROR grounder")
+            ror_grounder = get_ror_grounder()
+
         tqdm.write("getting ORCID to Wikidata mapping")
         orcid_to_wikidata = get_orcid_to_wikidata()
         tqdm.write("getting ORCID to Wikimedia commons")
@@ -466,14 +484,22 @@ def iter_records(
 
 
 def get_records(
-    *, force: bool = False, version_info: VersionInfo | None = None
+    *,
+    force: bool = False,
+    version_info: VersionInfo | None = None,
+    ror_grounder: ssslm.Grounder | None,
 ) -> dict[str, Record]:
     """Parse ORCID summary XML files, takes about an hour."""
-    return {record.orcid: record for record in iter_records(force=force, version_info=version_info)}
+    return {
+        record.orcid: record
+        for record in iter_records(
+            force=force, version_info=version_info, ror_grounder=ror_grounder
+        )
+    }
 
 
 def _process_file(  # noqa:C901
-    file,
+    file: typing.TextIO,
     ror_grounder: ssslm.Grounder,
     orcid_to_wikidata: dict[str, str],
     orcid_to_wikimedia_commons: dict[str, str],
@@ -545,7 +571,7 @@ def _process_file(  # noqa:C901
     if employments:
         record["employments"] = employments
 
-    educations = _get_educations(tree, aggiliation_grounder=ror_grounder)
+    educations = _get_educations(tree, affiliation_grounder=ror_grounder)
     if educations:
         record["educations"] = educations
 
@@ -580,12 +606,13 @@ def _process_file(  # noqa:C901
     return Record.model_validate(record)
 
 
-def _iter_other_names(t) -> Iterable[str]:
+def _iter_other_names(t: Element) -> Iterable[str]:
     for part in t.findall(".//other-name:content", namespaces=NAMESPACES):
-        part = part.text.strip()
-        for z in part.split(";"):
+        if not part.text:
+            continue
+        for z in part.text.strip().split(";"):
             z = z.strip()
-            if z is not None and " " in z and len(z) < 60:
+            if z and " " in z and len(z) < 60:
                 yield clean_name(z.strip())
 
 
@@ -596,7 +623,7 @@ UNKNOWN_NAMES_EXAMPLES: dict[str, str] = {}
 UNKNOWN_NAMES_FULL: dict[str, str] = {}
 
 
-def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:  # noqa:C901
+def _get_external_identifiers(tree: Element, orcid: str) -> tuple[dict[str, str], str | None]:  # noqa:C901
     rv = {}
     homepage = None
     for element in tree.findall(
@@ -609,6 +636,8 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
         if not local_unique_identifier:
             continue
         id_type = element.findtext(".//common:external-id-type", namespaces=NAMESPACES)
+        if id_type is None:
+            continue
         id_type_norm = _norm_key(id_type)
         if id_type_norm in EXTERNAL_ID_SKIP:
             continue
@@ -632,14 +661,20 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
     for element in tree.findall(
         ".//researcher-url:researcher-urls/researcher-url:researcher-url", namespaces=NAMESPACES
     ):
+        url = element.findtext(".//researcher-url:url", namespaces=NAMESPACES)
+        if url is None:
+            continue
+
+        url = url.rstrip("/")
+
         name = element.findtext(".//researcher-url:url-name", namespaces=NAMESPACES)
-        url = element.findtext(".//researcher-url:url", namespaces=NAMESPACES).rstrip("/")
         if name and homepage is None and _norm_key(name) in PERSONAL_KEYS:
             homepage = url
             continue
         url = url.removeprefix("https://")
         url = url.removeprefix("Https://")
         url = url.removeprefix("http://")
+
         if url.startswith("github.com/"):
             identifier = url.removeprefix("github.com/")
             identifier = identifier.split("?")[0]  # remove trash like ?tab=repositories
@@ -654,32 +689,24 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
         elif "facebook" in url or "instagram" in url:
             continue  # skip social media
         elif url.startswith("www.wikidata.org/wiki/"):
-            identifier = url.removeprefix("www.wikidata.org/wiki/")
-            rv["wikidata"] = identifier
+            rv["wikidata"] = url.removeprefix("www.wikidata.org/wiki/")
         elif url.startswith("tools.wmflabs.org/scholia/author/"):
-            identifier = url.removeprefix("tools.wmflabs.org/scholia/author/")
-            rv["wikidata"] = identifier
+            rv["wikidata"] = url.removeprefix("tools.wmflabs.org/scholia/author/")
         elif "linkedin.com/in/" in url:  # multiple languages subdomains, so startswith doesn't work
-            identifier = url.rstrip("/").split("linkedin.com/in/")[1]
-            rv["linkedin"] = unquote(identifier)
+            rv["linkedin"] = unquote(url.rstrip("/").split("linkedin.com/in/")[1])
         elif "scholar.google" in url:
             parsed_url = urlparse(url)
             query_params = parse_qs(parsed_url.query)
-            identifier = query_params.get("user", [None])[0]
-            if identifier:
-                rv["google.scholar"] = identifier
+            if google_scholar_ids := query_params.get("user"):
+                rv["google.scholar"] = google_scholar_ids[0]
         elif url.startswith("publons.com/author/"):
-            identifier = url.removeprefix("publons.com/author/").split("/")[0]
-            rv["publons.researcher"] = identifier
+            rv["publons.researcher"] = url.removeprefix("publons.com/author/").split("/")[0]
         elif url.startswith("www.researchgate.net/profile/"):
-            identifier = url.removeprefix("www.researchgate.net/profile/")
-            rv["researchgate.profile"] = identifier
+            rv["researchgate.profile"] = url.removeprefix("www.researchgate.net/profile/")
         elif url.startswith("www.scopus.com/authid/detail.uri?authorId="):
-            identifier = url.removeprefix("www.scopus.com/authid/detail.uri?authorId=")
-            rv["scopus"] = identifier
+            rv["scopus"] = url.removeprefix("www.scopus.com/authid/detail.uri?authorId=")
         elif url.startswith("www.webofscience.com/wos/author/record/"):
-            identifier = url.removeprefix("www.webofscience.com/wos/author/record/")
-            rv["wos.researcher"] = identifier
+            rv["wos.researcher"] = url.removeprefix("www.webofscience.com/wos/author/record/")
         elif url.startswith("lattes.cnpq.br/"):
             rv["lattes"] = url.removeprefix("lattes.cnpq.br/")
         elif url.startswith("dialnet.unirioja.es/servlet/autor?codigo="):
@@ -727,14 +754,15 @@ def _get_external_identifiers(tree, orcid) -> tuple[dict[str, str], str | None]:
     return rv, homepage
 
 
-def _get_emails(tree) -> list[str]:
+def _get_emails(tree: Element) -> list[str]:
     return [
         email.text.strip()
         for email in tree.findall(".//email:emails/email:email/email:email", namespaces=NAMESPACES)
+        if email.text
     ]
 
 
-def _get_keywords(tree) -> Iterable[str]:
+def _get_keywords(tree: Element) -> Iterable[str]:
     return [
         keyword.text.strip()
         for keyword in tree.findall(
@@ -744,7 +772,7 @@ def _get_keywords(tree) -> Iterable[str]:
     ]
 
 
-def _get_countries(tree, orcid) -> list[str]:
+def _get_countries(tree: Element, orcid: str) -> list[str]:
     rv = []
     for country in tree.findall(
         ".//address:addresses/address:address/address:country", namespaces=NAMESPACES
@@ -764,14 +792,14 @@ def _get_countries(tree, orcid) -> list[str]:
     return rv
 
 
-def _get_locale(tree, orcid) -> str | None:
+def _get_locale(tree: Element, orcid: str) -> str | None:
     value = tree.findtext(".//preferences:preferences/preferences:locale", namespaces=NAMESPACES)
     if value is None:
         return None
     return value.strip()
 
 
-def _get_works(tree, orcid) -> list[dict[str, str]]:
+def _get_works(tree: Element, orcid: str) -> list[dict[str, str]]:
     # get a subset of all works with pubmed IDs. TODO extend to other IDs
     pmids = set()
     for g in tree.findall(
@@ -847,26 +875,28 @@ def _standardize_pubmed(pubmed: str) -> str | None:
     return None
 
 
-def _get_employments(tree, affiliation_grounder: ssslm.Grounder):
+def _get_employments(tree: ElementTree, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
     elements = tree.findall(".//employment:employment-summary", namespaces=NAMESPACES)
     return _get_affiliations(elements, affiliation_grounder)
 
 
-def _get_educations(tree, aggiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
+def _get_educations(tree: ElementTree, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
     elements = tree.findall(
         ".//activities:educations//education:education-summary", namespaces=NAMESPACES
     )
-    return _get_affiliations(elements, aggiliation_grounder)
+    return _get_affiliations(elements, affiliation_grounder)
 
 
-def _get_memberships(tree, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
+def _get_memberships(tree: ElementTree, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
     elements = tree.findall(
         ".//activities:memberships//membership:membership-summary", namespaces=NAMESPACES
     )
     return _get_affiliations(elements, affiliation_grounder)
 
 
-def _get_affiliations(elements, affiliation_grounder: ssslm.Grounder) -> list[Affiliation]:
+def _get_affiliations(
+    elements: list[Element], affiliation_grounder: ssslm.Grounder
+) -> list[Affiliation]:
     results = []
     for element in elements:
         if element is None:
@@ -881,7 +911,7 @@ def _get_affiliations(elements, affiliation_grounder: ssslm.Grounder) -> list[Af
         references = _get_disambiguated_organization(
             organization_element, name, affiliation_grounder
         )
-        record = {"name": name.strip(), "xrefs": references}
+        record: dict[str, Any] = {"name": name.strip(), "xrefs": references}
 
         if (start_date := element.find(".//common:start-date", namespaces=NAMESPACES)) is not None:
             record["start"] = _get_date(start_date)
@@ -895,7 +925,7 @@ def _get_affiliations(elements, affiliation_grounder: ssslm.Grounder) -> list[Af
     return results
 
 
-def _get_date(date_element) -> Date | None:
+def _get_date(date_element: Element) -> Date | None:
     year = date_element.findtext(".//common:year", namespaces=NAMESPACES)
     if year is None:
         return None
@@ -905,7 +935,7 @@ def _get_date(date_element) -> Date | None:
 
 
 def _get_disambiguated_organization(
-    organization_element, name, grounder: ssslm.Grounder
+    organization_element: Element, name: str, grounder: ssslm.Grounder
 ) -> dict[str, str]:
     references = {}
     for de in organization_element.findall(
@@ -934,16 +964,14 @@ def _get_disambiguated_organization(
 MINIMUM_ROLE_LENGTH = 4
 
 
-def _get_role(element) -> NamedReference | str | None:
+def _get_role(element: Element) -> NamableReference | str | None:
     text = element.findtext(".//common:role-title", namespaces=NAMESPACES)
     if not text:
         return None
-    label, _, reference = standardize_role(text)
-    if len(label) < MINIMUM_ROLE_LENGTH:
+    rr, _ = standardize_role(text)
+    if isinstance(rr, str) and len(rr) < MINIMUM_ROLE_LENGTH:
         return None
-    if reference:
-        return reference
-    return label
+    return rr
 
 
 def ground_researcher(name: str, *, version_info: VersionInfo | None = None) -> list[ssslm.Match]:
@@ -967,7 +995,12 @@ def write_schema(path: Path) -> None:
     path.write_text(json.dumps(schema, indent=2))
 
 
-def write_summaries(*, version_info: VersionInfo | None = None, force: bool = False):  # noqa:C901
+def write_summaries(  # noqa:C901
+    *,
+    version_info: VersionInfo | None = None,
+    force: bool = False,
+    ror_grounder: ssslm.Grounder | None,
+) -> None:
     """Write summary files."""
     from tabulate import tabulate
 
@@ -1004,7 +1037,10 @@ def write_summaries(*, version_info: VersionInfo | None = None, force: bool = Fa
         )
 
         for record in iter_records(
-            force=force, desc="Writing summaries", version_info=version_info
+            force=force,
+            desc="Writing summaries",
+            version_info=version_info,
+            ror_grounder=ror_grounder,
         ):
             if record.emails:
                 has_email += 1
@@ -1095,7 +1131,12 @@ def write_summaries(*, version_info: VersionInfo | None = None, force: bool = Fa
         write_counter(file, ("role", "count"), employment_roles)
 
 
-def write_counter(file, header, counter, examples=None) -> None:
+def write_counter(
+    file: TextIO,
+    header: Sequence[str],
+    counter: Counter[str],
+    examples: dict[str, str] | None = None,
+) -> None:
     """Write a counter to a TSV file."""
     writer = csv.writer(file, delimiter="\t")
     if examples is not None:

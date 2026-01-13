@@ -10,7 +10,7 @@ import pyobo
 import ssslm
 from tqdm import tqdm
 
-from orcid_downloader.api import VersionInfo, _get_output_module, iter_records
+from orcid_downloader.api import VERSION_DEFAULT, VersionInfo, _get_output_module, iter_records
 
 __all__ = [
     "write_owl_rdf",
@@ -68,9 +68,9 @@ PREAMBLE = """\
 @prefix ja: <http://purl.obolibrary.org/obo/IAO_0000013> .
 
 <https://w3id.org/biopragmatics/resources/orcid.ttl> a owl:Ontology ;
-    owl:versionInfo "2023"^^xsd:string ;
-    terms:title "ORCID Instance Ontology" ;
-    terms:description "An ontology representation of ORCID" ;
+    owl:versionInfo "{version}"^^xsd:string ;
+    terms:title "ORCiD Instance Ontology" ;
+    terms:description "An ontology representation of ORCiD" ;
     terms:license <https://creativecommons.org/publicdomain/zero/1.0/> ;
     rdfs:comment "Built by https://github.com/cthoyt/orcid_downloader"^^xsd:string .
 
@@ -98,6 +98,12 @@ hp: a owl:AnnotationProperty;
 mb: a owl:AnnotationProperty;
     rdfs:label "email"^^xsd:string .
 
+k: a owl:AnnotationProperty;
+    rdfs:label "has keyword"^^xsd:string .
+
+p: a owl:AnnotationProperty;
+    rdfs:label "author"^^xsd:string .
+
 g: a owl:Class ;
     rdfs:label "Organization"^^xsd:string .
 
@@ -120,6 +126,8 @@ def write_owl_rdf(  # noqa:C901
     ror_version: str | None = None,
 ) -> Path:
     """Write OWL RDF in a gzipped file."""
+    if version_info is None:
+        version_info = VERSION_DEFAULT
     module = _get_output_module(version_info)
     path = module.join(name="orcid.ttl.gz")
 
@@ -130,7 +138,7 @@ def write_owl_rdf(  # noqa:C901
     pmid_written: set[str] = set()
 
     with gzip.open(path, "wt") as file:
-        file.write(PREAMBLE + "\n")
+        file.write(PREAMBLE.format(version=version_info.version) + "\n")
         for record in iter_records(
             desc="Writing OWL RDF",
             version_info=version_info,

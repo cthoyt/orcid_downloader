@@ -6,6 +6,7 @@ import csv
 import gzip
 import json
 import logging
+import re
 import tarfile
 import typing
 from collections import Counter
@@ -43,6 +44,8 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+DUB_WS = re.compile(r"\s\s+")
 
 
 @dataclass(frozen=True)
@@ -112,6 +115,7 @@ NAMESPACES = {
     "membership": "http://www.orcid.org/ns/membership",
     "address": "http://www.orcid.org/ns/address",
     "preferences": "http://www.orcid.org/ns/preferences",
+    "work": "http://www.orcid.org/ns/work",
 }
 
 
@@ -244,6 +248,7 @@ class Work(BaseModel):
     """A model representing a creative work."""
 
     pubmed: str = Field(..., title="PubMed identifier")
+    title: str | None = None
 
 
 class Date(BaseModel):
@@ -534,13 +539,13 @@ def _process_file(  # noqa:C901
     family_name = tree.findtext(".//personal-details:family-name", namespaces=NAMESPACES)
     given_names = tree.findtext(".//personal-details:given-names", namespaces=NAMESPACES)
     if family_name and given_names:
-        label_name = f"{given_names.strip()} {family_name.strip()}"
+        label_name = clean_name(f"{given_names.strip()} {family_name.strip()}")
     else:
         label_name = None
 
     credit_name = tree.findtext(".//personal-details:credit-name", namespaces=NAMESPACES)
     if credit_name:
-        credit_name = credit_name.strip()
+        credit_name = clean_name(credit_name)
 
     if not credit_name and not label_name:
         # Skip records that don't have any kinds of labels
@@ -554,7 +559,6 @@ def _process_file(  # noqa:C901
         if label_name is not None:
             aliases.add(label_name)
 
-    name = name and clean_name(name)
     aliases.update(_iter_other_names(tree))
     if name in aliases:  # make sure there's no duplicate
         aliases.remove(name)
@@ -693,6 +697,7 @@ def _get_external_identifiers(tree: Element, orcid: str) -> tuple[dict[str, str]
         elif url.startswith("tools.wmflabs.org/scholia/author/"):
             rv["wikidata"] = url.removeprefix("tools.wmflabs.org/scholia/author/")
         elif "linkedin.com/in/" in url:  # multiple languages subdomains, so startswith doesn't work
+            # TODO strip off /?originalSubdomain=nz
             rv["linkedin"] = unquote(url.rstrip("/").split("linkedin.com/in/")[1])
         elif "scholar.google" in url:
             parsed_url = urlparse(url)
@@ -702,7 +707,9 @@ def _get_external_identifiers(tree: Element, orcid: str) -> tuple[dict[str, str]
         elif url.startswith("publons.com/author/"):
             rv["publons.researcher"] = url.removeprefix("publons.com/author/").split("/")[0]
         elif url.startswith("www.researchgate.net/profile/"):
-            rv["researchgate.profile"] = url.removeprefix("www.researchgate.net/profile/")
+            rv["researchgate.profile"] = url.removeprefix("www.researchgate.net/profile/").split(
+                "/"
+            )[0]
         elif url.startswith("www.scopus.com/authid/detail.uri?authorId="):
             rv["scopus"] = url.removeprefix("www.scopus.com/authid/detail.uri?authorId=")
         elif url.startswith("www.webofscience.com/wos/author/record/"):
@@ -762,7 +769,7 @@ def _get_emails(tree: Element) -> list[str]:
     ]
 
 
-def _get_keywords(tree: Element) -> Iterable[str]:
+def _get_keywords(tree: Element) -> list[str]:
     return [
         keyword.text.strip()
         for keyword in tree.findall(
@@ -793,30 +800,60 @@ def _get_countries(tree: Element, orcid: str) -> list[str]:
 
 
 def _get_locale(tree: Element, orcid: str) -> str | None:
-    value = tree.findtext(".//preferences:preferences/preferences:locale", namespaces=NAMESPACES)
-    if value is None:
+    locale_value = tree.findtext(
+        ".//preferences:preferences/preferences:locale", namespaces=NAMESPACES
+    )
+    if locale_value is None:
         return None
-    return value.strip()
+    return locale_value.strip()
 
 
-def _get_works(tree: Element, orcid: str) -> list[dict[str, str]]:
-    # get a subset of all works with pubmed IDs. TODO extend to other IDs
-    pmids = set()
-    for g in tree.findall(
-        ".//activities:works/activities:group/common:external-ids", namespaces=NAMESPACES
+def _get_works(tree: Element, orcid: str) -> list[dict[str, str | None]]:
+    rv = []
+    for work in tree.findall(
+        ".//activities:works/activities:group/work:work-summary", namespaces=NAMESPACES
     ):
-        if g.findtext(".//common:external-id-type", namespaces=NAMESPACES) == "pmid":
-            value: str | None = g.findtext(".//common:external-id-value", namespaces=NAMESPACES)
-            if not value:
+        title: str | None = work.findtext(".//work:title/common:title", namespaces=NAMESPACES)
+        if title:
+            title = title.replace(" ", " ")  # noqa:RUF001
+            title = title.strip().rstrip(".").strip().replace("\n", " ")
+            title = DUB_WS.sub(" ", title)
+
+        external_ids: dict[str, str] = {}
+        for external_id_element in work.findall(
+            ".//common:external-ids/common:external-id", namespaces=NAMESPACES
+        ):
+            external_id_type = external_id_element.findtext(
+                ".//common:external-id-type", namespaces=NAMESPACES
+            )
+            if external_id_type != "pmid":
+                continue  # TODO handle other ID types later
+
+            external_id_value: str | None = external_id_element.findtext(
+                ".//common:external-id-value", namespaces=NAMESPACES
+            )
+            if not external_id_value:
                 continue
-            value_std = _standardize_pubmed(value)
-            if not value_std:
+            external_id_std = _standardize_pubmed(external_id_value)
+            if not external_id_std:
                 continue
-            if not value_std.isnumeric():
+            if external_id_type == "pmid" and not external_id_std.isnumeric():
                 tqdm.write(f"[{orcid}] unstandardized PubMed: '{value}'")
                 continue
-            pmids.add(value_std)
-    return [{"pubmed": pmid} for pmid in sorted(pmids)]
+            external_ids[external_id_type] = external_id_std
+
+        pubmed = external_ids.get("pmid")
+        if not pubmed:
+            continue
+
+        rv.append(
+            {
+                "title": title,
+                "pubmed": pubmed,
+            }
+        )
+
+    return rv
 
 
 PUBMED_PREFIXES = [
@@ -1145,16 +1182,3 @@ def write_counter(
     else:
         writer.writerow(header)
         writer.writerows(counter.most_common())
-
-
-def _process_example() -> Record | None:
-    from orcid_downloader.wikidata import get_orcid_to_commons_image, get_orcid_to_wikidata
-
-    here = Path(__file__).parent.parent.parent.resolve()
-    example_path = here.joinpath("example.xml")
-    grounder = ssslm.make_grounder([])
-    orcid_to_wikimedia_commons = get_orcid_to_commons_image()
-    orcid_to_wikidata = get_orcid_to_wikidata()
-    with example_path.open() as file:
-        res = _process_file(file, grounder, orcid_to_wikidata, orcid_to_wikimedia_commons)
-    return res

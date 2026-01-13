@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import gzip
+from itertools import chain
+from pathlib import Path
 
 import pyobo
 import ssslm
@@ -22,8 +24,34 @@ PREAMBLE = """\
 @prefix oboInOwl: <http://www.geneontology.org/formats/oboInOwl#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
+@prefix wikidata: <http://www.wikidata.org/entity/> .
+@prefix scopus: <https://www.scopus.com/authid/detail.uri?authorId=> .
+@prefix wos.researcher: <https://www.webofscience.com/wos/author/record/> .
+@prefix sciprofiles: <https://sciprofiles.com/profile/> .
+@prefix linkedin: <https://www.linkedin.com/in/> .
+@prefix loop: <https://loop.frontiersin.org/people/> .
+@prefix google.scholar: <https://scholar.google.com/citations?user=> .
+@prefix researchgate.profile: <https://www.researchgate.net/profile/> .
+@prefix cienciavitae: <https://www.cienciavitae.pt/> .
+@prefix lattes: <https://lattes.cnpq.br/> .
+@prefix github: <https://github.com/> .
+@prefix kaken: <https://nrid.nii.ac.jp/ja/nrid/> .
+@prefix gnd: <https://d-nb.info/gnd/> .
+@prefix dialnet.author: <https://dialnet.unirioja.es/servlet/autor?codigo=> .
+@prefix isni: <http://www.isni.org/isni/> .
+@prefix authenticus: <https://www.authenticus.pt/> .
+@prefix mastodon: <https://fedirect.toolforge.org/?id=> .
+@prefix ssrn.author: <https://ssrn.com/author=> .
+@prefix dblp.author: <https://dblp.org/pid/> .
+@prefix osf: <https://osf.io/> .
+@prefix publons.researcher: <https://publons.com/researcher/> .
+@prefix ieee.author: <https://ieeexplore.ieee.org/author/> .
+@prefix viaf: <http://viaf.org/viaf/> .
+@prefix dockerhub.user: <https://hub.docker.com/u/> .
+
 @prefix o: <https://orcid.org/> .
 @prefix r: <https://ror.org/> .
+@prefix pmid: <https://pubmed.ncbi.nlm.nih.gov/> .
 @prefix h: <http://purl.obolibrary.org/obo/NCBITaxon_9606> .
 @prefix g: <http://purl.obolibrary.org/obo/OBI_0000245> .
 @prefix s: <http://www.geneontology.org/formats/oboInOwl#hasExactSynonym> .
@@ -35,6 +63,9 @@ PREAMBLE = """\
 @prefix hp: <http://xmlns.com/foaf/0.1/homepage> .
 @prefix mb: <http://xmlns.com/foaf/0.1/mbox> .
 @prefix db: <http://xmlns.com/foaf/0.1/depicted_by> .
+@prefix k: <https://schema.org/keywords> .
+@prefix p: <https://schema.org/author> .
+@prefix ja: <http://purl.obolibrary.org/obo/IAO_0000013> .
 
 <https://w3id.org/biopragmatics/resources/orcid.ttl> a owl:Ontology ;
     owl:versionInfo "2023"^^xsd:string ;
@@ -73,6 +104,9 @@ g: a owl:Class ;
 h: a owl:Class ;
     rdfs:label "Homo sapiens"^^xsd:string .
 
+ja: a owl:Class ;
+    rdfs:label "journal article"^^xsd:string .
+
 db: a owl:AnnotationProperty;
     rdfs:label "depicted by"^^xsd:string .
 """
@@ -82,9 +116,9 @@ def write_owl_rdf(  # noqa:C901
     *,
     version_info: VersionInfo | None = None,
     force: bool = False,
-    ror_grounder: ssslm.Grounder | None,
-    ror_version: str | None,
-) -> None:
+    ror_grounder: ssslm.Grounder | None = None,
+    ror_version: str | None = None,
+) -> Path:
     """Write OWL RDF in a gzipped file."""
     module = _get_output_module(version_info)
     path = module.join(name="orcid.ttl.gz")
@@ -92,8 +126,8 @@ def write_owl_rdf(  # noqa:C901
     tqdm.write(f"Writing OWL RDF to {path}")
 
     ror_id_to_name = pyobo.get_id_name_mapping("ror", version=ror_version)
-    ror_id_to_name = {k: v.replace('"', '\\"') for k, v in ror_id_to_name.items()}
     ror_written: set[str] = set()
+    pmid_written: set[str] = set()
 
     with gzip.open(path, "wt") as file:
         file.write(PREAMBLE + "\n")
@@ -106,11 +140,17 @@ def write_owl_rdf(  # noqa:C901
             if not record.name:
                 continue
             ror_parts = []
-            parts = ["a h:", f'l: "{record.name}"']
+            article_parts = []
+            parts = ["a h:", f"l: {_escape(record.name)}"]
             for alias in record.aliases:
-                parts.append(f's: "{alias}"')
+                parts.append(f"s: {_escape(alias)}")
             for prefix, value in sorted(record.xrefs.items()):
-                parts.append(f'x: "{prefix}:{value}"')
+                if prefix == "mastodon":
+                    continue
+                elif _bad_luid(value):
+                    tqdm.write(f"[orcid:{record.orcid}] had invalid xref: {prefix}:{value}")
+                else:
+                    parts.append(f"x: {prefix}:{value}")
             if record.commons_image:
                 parts.append(f"db: <{record.commons_image_url}>")
             for org in record.employments:
@@ -118,7 +158,7 @@ def write_owl_rdf(  # noqa:C901
                     continue
                 if org.ror not in ror_written:
                     if org_ror_name := ror_id_to_name.get(org.ror):
-                        ror_parts.append(f'r:{org.ror} a g:; l: "{org_ror_name}" .')
+                        ror_parts.append(f"r:{org.ror} a g:; l: {_escape(org_ror_name)} .")
                     else:
                         ror_parts.append(f"r:{org.ror} a g: .")
                     ror_written.add(org.ror)
@@ -129,7 +169,7 @@ def write_owl_rdf(  # noqa:C901
                 if education_org.ror not in ror_written:
                     if education_org_ror_name := ror_id_to_name.get(education_org.ror):
                         ror_parts.append(
-                            f'r:{education_org.ror} a g:; l: "{education_org_ror_name}" .'
+                            f"r:{education_org.ror} a g:; l: {_escape(education_org_ror_name)} ."
                         )
                     else:
                         ror_parts.append(f"r:{education_org.ror} a g: .")
@@ -140,17 +180,42 @@ def write_owl_rdf(  # noqa:C901
                     continue
                 if member_org.ror not in ror_written:
                     if member_org_ror_name := ror_id_to_name.get(member_org.ror):
-                        ror_parts.append(f'r:{member_org.ror} a g:; l: "{member_org_ror_name}" .')
+                        ror_parts.append(
+                            f"r:{member_org.ror} a g:; l: {_escape(member_org_ror_name)} ."
+                        )
                     else:
                         ror_parts.append(f"r:{member_org.ror} a g: .")
                     ror_written.add(member_org.ror)
                 parts.append(f"m: r:{member_org.ror}")
             if record.homepage:
                 parts.append(f"hp: <{record.homepage}>")
-            for part in ror_parts:
-                file.write(f"{part}\n")
+            for keyword in sorted(record.keywords):
+                parts.append(f"k: {_escape(keyword)}")
+            for work in record.works:
+                if work.pubmed not in pmid_written:
+                    if work.title:
+                        article_parts.append(
+                            f"pmid:{work.pubmed} a ja:; l: {_escape(work.title)} ."
+                        )
+                    else:
+                        article_parts.append(f"pmid:{work.pubmed} a ja:.")
+                    pmid_written.add(work.pubmed)
+                parts.append(f"p: pmid:{work.pubmed}")
+            for part in chain(ror_parts, article_parts):
+                file.write(part + "\n")
             file.write(f"o:{record.orcid} " + "; ".join(parts) + " .\n")
+
+    return path
+
+
+def _bad_luid(value: str) -> bool:
+    # TODO more idiomatic checking
+    return any(x in value for x in "?/&") or value.startswith("-")
+
+
+def _escape(s: str) -> str:
+    return '"' + s.replace('"', r"\"") + '"'
 
 
 if __name__ == "__main__":
-    write_owl_rdf(ror_grounder=None, ror_version=None)
+    write_owl_rdf()

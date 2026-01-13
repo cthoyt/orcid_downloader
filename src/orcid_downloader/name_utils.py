@@ -17,19 +17,21 @@ def clean_name(name: str) -> str:
     :param name: A full name
     :return: A cleaned full name, e.g., stripped of titles and suffixes
     """
+    name = name.strip()
+
     # strip titles like Dr. and DR. from beginning of all names/aliases
     # strip post-titles Francess Dufie Azumah (DR.)
     lower = name.lower()
-    if lower.startswith("professor "):
-        name = name[len("professor ") :].strip()
-    if lower.startswith("prof."):
-        name = name[len("prof.") :].strip()
-    if lower.startswith("dr.-ing."):
-        name = name[len("dr.-ing.") :]
-    if lower.startswith("dr "):
-        name = name[len("dr ") :]
-    if lower.startswith("dr."):
-        name = name[len("dr.") :].strip()
+    for z in [
+        "professor ",
+        "prof.",
+        "dr.-ing.",
+        "dr ",
+        "dr.",
+        "(dr.)",
+    ]:
+        if lower.startswith(z):
+            name = name[len(z) :].strip()
 
     for suffix in [
         "(dr)",
@@ -42,7 +44,7 @@ def clean_name(name: str) -> str:
         ", ms",
     ]:
         if lower.endswith(suffix):
-            name = name.removesuffix(suffix).strip()
+            name = name[: -len(suffix)].strip()
 
     name = name.replace('"', "")
     name = name.strip("/")

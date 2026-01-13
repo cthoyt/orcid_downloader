@@ -23,6 +23,31 @@ PREAMBLE = """\
 @prefix oboInOwl: <http://www.geneontology.org/formats/oboInOwl#> .
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
+@prefix wikidata: <http://www.wikidata.org/entity/> .
+@prefix scopus: <https://www.scopus.com/authid/detail.uri?authorId=> .
+@prefix wos.researcher: <https://www.webofscience.com/wos/author/record/> .
+@prefix sciprofiles: <https://sciprofiles.com/profile/> .
+@prefix linkedin: <https://www.linkedin.com/in/> .
+@prefix loop: <https://loop.frontiersin.org/people/> .
+@prefix google.scholar: <https://scholar.google.com/citations?user=> .
+@prefix researchgate.profile: <https://www.researchgate.net/profile/> .
+@prefix cienciavitae: <https://www.cienciavitae.pt/> .
+@prefix lattes: <https://lattes.cnpq.br/> .
+@prefix github: <https://github.com/> .
+@prefix kaken: <https://nrid.nii.ac.jp/ja/nrid/> .
+@prefix gnd: < 	https://d-nb.info/gnd/> .
+@prefix dialnet.author: <https://dialnet.unirioja.es/servlet/autor?codigo=> .
+@prefix isni: <http://www.isni.org/isni/> .
+@prefix authenticus: <https://www.authenticus.pt/> .
+@prefix mastodon: <https://fedirect.toolforge.org/?id=> .
+@prefix ssrn.author: <https://ssrn.com/author=> .
+@prefix dblp.author: <https://dblp.org/pid/> .
+@prefix osf: <https://osf.io/> .
+@prefix publons.researcher: <https://publons.com/researcher/> .
+@prefix ieee.author: <https://ieeexplore.ieee.org/author/> .
+@prefix viaf: <http://viaf.org/viaf/> .
+@prefix dockerhub.user: <https://hub.docker.com/u/> .
+
 @prefix o: <https://orcid.org/> .
 @prefix r: <https://ror.org/> .
 @prefix pmid: <https://pubmed.ncbi.nlm.nih.gov/> .

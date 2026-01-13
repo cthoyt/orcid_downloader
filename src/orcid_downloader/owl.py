@@ -87,8 +87,8 @@ def write_owl_rdf(  # noqa:C901
     *,
     version_info: VersionInfo | None = None,
     force: bool = False,
-    ror_grounder: ssslm.Grounder | None,
-    ror_version: str | None,
+    ror_grounder: ssslm.Grounder | None = None,
+    ror_version: str | None = None,
 ) -> None:
     """Write OWL RDF in a gzipped file."""
     module = _get_output_module(version_info)
@@ -170,4 +170,4 @@ def write_owl_rdf(  # noqa:C901
 
 
 if __name__ == "__main__":
-    write_owl_rdf(ror_grounder=None, ror_version=None)
+    write_owl_rdf()

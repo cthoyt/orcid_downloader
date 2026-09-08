@@ -34,8 +34,9 @@ def _get_test_version_info() -> VersionInfo:
 @main.command()
 @click.option("--test", is_flag=True)
 @click.option("--ror-version")
+@click.option("-f", "--force", is_flag=True)
 @verbose_option
-def cache(test: bool, ror_version: str | None) -> None:
+def cache(test: bool, ror_version: str | None, force: bool) -> None:
     """Process ORCID."""
     import sys
 
@@ -86,8 +87,9 @@ def cache(test: bool, ror_version: str | None) -> None:
     click.echo(f"Writing schema to {schema_path}")
     write_schema(schema_path)
 
+    # only force on the first one
     click.echo("Writing summaries")
-    write_summaries(version_info=version_info, force=False, ror_grounder=ror_grounder)
+    write_summaries(version_info=version_info, force=force, ror_grounder=ror_grounder)
 
     click.echo("Writing SQLite")
     write_sqlite(version_info=version_info, force=False, ror_grounder=ror_grounder)

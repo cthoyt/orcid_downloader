@@ -466,7 +466,6 @@ def iter_records(  # noqa:C901
         )
 
         path = ensure_summaries(version_info=version_info)
-        tqdm.write(f"path to TARFILE: {path}")
         it = _iter_tarfile_members(path)
         # TODO use process_map with chunksize=50_000
 
@@ -727,8 +726,10 @@ def _get_external_identifiers(tree: Element, orcid: str) -> tuple[dict[str, str]
         elif url.startswith("tools.wmflabs.org/scholia/author/"):
             rv["wikidata"] = _remove_params(url).removeprefix("tools.wmflabs.org/scholia/author/")
         elif "linkedin.com/in/" in url:  # multiple languages subdomains, so startswith doesn't work
-            url = _remove_params(url)
-            rv["linkedin"] = unquote(url.rstrip("/").split("linkedin.com/in/")[1])
+            url_cleaned = _remove_params(url)
+            _, _, end = url_cleaned.rpartition("/")
+            if end:
+                rv["linkedin"] = unquote(end)
         elif "scholar.google" in url:
             if google_scholar_id := _get_url_param(url, "user"):
                 rv["google.scholar"] = google_scholar_id
@@ -799,7 +800,7 @@ def _get_external_identifiers(tree: Element, orcid: str) -> tuple[dict[str, str]
 
 
 def _remove_params(url: str) -> str:
-    url, _, _ = url.rpartition("?")
+    url, _, _ = url.partition("?")
     return url.rstrip("/")
 
 
